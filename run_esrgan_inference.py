@@ -16,7 +16,7 @@ CHECKPOINT = (
     OUTPUT_DIRECTORY
     / "ESRGAN_Dataset"
     / "checkpoints"
-    / "esrgan_epoch_0010.pt"
+    / "esrgan_epoch_0050.pt"
 )
 
 OUTPUT_IMAGE = (

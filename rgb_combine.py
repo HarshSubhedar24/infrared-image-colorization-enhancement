@@ -18,6 +18,7 @@ import rasterio
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
+from rasterio.windows import Window
 
 from scene_selection import (
     display_existing_output_files,
@@ -65,104 +66,77 @@ display_existing_output_files(Path(output_folder))
 os.makedirs(output_folder, exist_ok=True)
 
 output_file = os.path.join(output_folder, "RGB_Image.png")
+TILE_SIZE = 512
 
 # ==========================================================
 # READ LANDSAT BANDS
 # ==========================================================
 
-print("\nReading Landsat Bands...")
-
-with rasterio.open(red_band) as src:
-    red = src.read(1)
-
-with rasterio.open(green_band) as src:
-    green = src.read(1)
-
-with rasterio.open(blue_band) as src:
-    blue = src.read(1)
-
-print("✓ Bands Loaded Successfully")
-print("Image Size :", red.shape)
-
-# ==========================================================
-# VERIFY IMAGE DIMENSIONS
-# ==========================================================
-
-assert red.shape == green.shape == blue.shape, \
-    "Band dimensions do not match!"
-
-print("✓ Band Dimensions Verified")
-
 # ==========================================================
 # PERCENTILE CONTRAST STRETCH
 # ==========================================================
 
-def percentile_stretch(image):
-
-    image = image.astype(np.float32)
-
-    valid = image[image > 0]
-
-    if len(valid) == 0:
-        return np.zeros_like(image)
-
-    p2 = np.percentile(valid, 2)
-    p98 = np.percentile(valid, 98)
-
-    image = np.clip(image, p2, p98)
-
-    image = (image - p2) / max((p98 - p2), 1e-6)
-
-    return image
+def get_percentiles(path):
+    with rasterio.open(path) as src:
+        sample_height = max(1, src.height // 8)
+        sample_width = max(1, src.width // 8)
+        sample = src.read(
+            1,
+            out_shape=(1, sample_height, sample_width),
+            resampling=rasterio.enums.Resampling.nearest,
+        ).astype(np.float32)
+    valid = sample[sample > 0]
+    if valid.size == 0:
+        return 0.0, 1.0
+    return float(np.percentile(valid, 2)), float(np.percentile(valid, 98))
 
 
-print("\nApplying Contrast Stretch...")
+def percentile_stretch(image, p2, p98):
+    stretched = image.astype(np.float32, copy=True)
+    np.clip(stretched, p2, p98, out=stretched)
+    np.subtract(stretched, p2, out=stretched)
+    np.divide(stretched, max(p98 - p2, 1e-6), out=stretched)
+    np.multiply(stretched, 255.0, out=stretched)
+    return np.rint(stretched).astype(np.uint8)
 
-red = percentile_stretch(red)
-green = percentile_stretch(green)
-blue = percentile_stretch(blue)
 
-print("✓ Contrast Stretch Completed")
+print("\nReading Landsat Bands...")
+with rasterio.open(red_band) as red_src, rasterio.open(green_band) as green_src, rasterio.open(blue_band) as blue_src:
+    if not (red_src.width == green_src.width == blue_src.width and red_src.height == green_src.height == blue_src.height):
+        raise ValueError("Band dimensions do not match.")
 
-# ==========================================================
-# CONVERT TO UINT8
-# ==========================================================
-
-print("\nConverting to 8-bit...")
-
-red = (red * 255).astype(np.uint8)
-green = (green * 255).astype(np.uint8)
-blue = (blue * 255).astype(np.uint8)
-
-print("✓ Conversion Completed")
-
-# ==========================================================
-# STACK RGB CHANNELS
-# ==========================================================
-
-print("\nCombining RGB Bands...")
-
-rgb = np.stack((red, green, blue), axis=-1)
-
-print("✓ RGB Image Created")
-print("RGB Shape :", rgb.shape)
-
-# ==========================================================
-# SAVE IMAGE
-# ==========================================================
-
-print("\nSaving RGB Image...")
-
-success = cv2.imwrite(
-    output_file,
-    cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-)
-
-if success:
+    dimensions = (red_src.width, red_src.height)
+    percentiles = [
+        get_percentiles(path)
+        for path in (red_band, green_band, blue_band)
+    ]
+    profile = {
+        "driver": "PNG",
+        "width": red_src.width,
+        "height": red_src.height,
+        "count": 3,
+        "dtype": "uint8",
+    }
+    print("✓ Bands verified:", dimensions)
+    print("\nSaving RGB Image in windows...")
+    with rasterio.open(output_file, "w", **profile) as destination:
+        for top in range(0, red_src.height, TILE_SIZE):
+            for left in range(0, red_src.width, TILE_SIZE):
+                height = min(TILE_SIZE, red_src.height - top)
+                width = min(TILE_SIZE, red_src.width - left)
+                window = Window(left, top, width, height)
+                rgb_tile = np.empty((3, height, width), dtype=np.uint8)
+                for channel_index, (source, (p2, p98)) in enumerate(zip(
+                    (red_src, green_src, blue_src),
+                    percentiles,
+                )):
+                    band = source.read(1, window=window)
+                    rgb_tile[channel_index] = percentile_stretch(band, p2, p98)
+                    del band
+                destination.write(rgb_tile, window=window)
+                del rgb_tile
     print("✓ RGB Image Saved Successfully")
     print("Location :", output_file)
-else:
-    print("Failed to save image.")
 
 # ==========================================================
 # DISPLAY PREVIEW
@@ -170,7 +144,11 @@ else:
 
 print("\nGenerating Preview...")
 
-preview = cv2.resize(rgb, (1200, 1200))
+with rasterio.open(output_file) as output:
+    preview = output.read(
+        out_shape=(3, 1200, 1200),
+        resampling=rasterio.enums.Resampling.bilinear,
+    ).transpose(1, 2, 0)
 
 plt.figure(figsize=(10, 10))
 plt.imshow(preview)

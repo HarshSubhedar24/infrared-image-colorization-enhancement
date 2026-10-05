@@ -364,8 +364,10 @@ global_max = -np.inf
 global_sum = 0.0
 global_count = 0
 
-# Store valid temperature values for percentile calculation
-temperature_values = []
+# Store a bounded sample from each tile for statistics. The complete raster
+# remains windowed and is never concatenated in memory.
+temperature_samples = []
+STATISTICS_SAMPLES_PER_TILE = 4096
 
 tile_number = 0
 
@@ -425,8 +427,15 @@ for window in generate_windows(src):
 
     global_count += valid_pixels.size
 
-    # Store values for percentile computation
-    temperature_values.append(valid_pixels)
+    # Keep only a bounded, evenly distributed sample from this tile.
+    sample_count = min(STATISTICS_SAMPLES_PER_TILE, valid_pixels.size)
+    sample_indices = np.linspace(
+        0,
+        valid_pixels.size - 1,
+        num=sample_count,
+        dtype=np.intp,
+    )
+    temperature_samples.append(valid_pixels[sample_indices].copy())
 
     # Free memory
     del thermal_dn
@@ -442,10 +451,10 @@ print("\n")
 # Combine all valid pixels
 # ----------------------------------------------------------
 
-print("Combining Valid Pixels...")
+print("Combining Sampled Valid Pixels...")
 
 temperature_values = np.concatenate(
-    temperature_values
+    temperature_samples
 )
 
 print("Completed")
@@ -462,9 +471,7 @@ global_mean = (
 # Calculate Global Standard Deviation
 # ----------------------------------------------------------
 
-global_std = np.std(
-    temperature_values
-)
+global_std = np.std(temperature_values)
 
 # ----------------------------------------------------------
 # Print Statistics
@@ -789,7 +796,7 @@ print("\nGenerating Preview...")
 
 preview = cv2.resize(
     thermal_png,
-    (1000, 1000),
+    (PREVIEW_SIZE, PREVIEW_SIZE),
     interpolation=cv2.INTER_NEAREST
 )
 
@@ -807,7 +814,7 @@ HISTOGRAM_PREVIEW = PREVIEW_FOLDER / "Thermal_Histogram.png"
 # Preview 1 : Grayscale
 # ----------------------------------------------------------
 
-plt.figure(figsize=(8,8))
+gray_figure = plt.figure(figsize=(8, 8), dpi=100)
 
 plt.imshow(preview, cmap="gray")
 
@@ -817,13 +824,13 @@ plt.axis("off")
 
 plt.savefig(
     str(GRAY_PREVIEW),
-    dpi=300,
+    dpi=100,
     bbox_inches="tight"
 )
 
 plt.show()
 
-plt.close()
+plt.close(gray_figure)
 
 print("✓ Saved :", GRAY_PREVIEW)
 
@@ -831,7 +838,7 @@ print("✓ Saved :", GRAY_PREVIEW)
 # Preview 2 : Inferno
 # ----------------------------------------------------------
 
-plt.figure(figsize=(8,8))
+inferno_figure = plt.figure(figsize=(8, 8), dpi=100)
 
 plt.imshow(preview, cmap="inferno")
 
@@ -841,13 +848,13 @@ plt.axis("off")
 
 plt.savefig(
     str(INFERNO_PREVIEW),
-    dpi=300,
+    dpi=100,
     bbox_inches="tight"
 )
 
 plt.show()
 
-plt.close()
+plt.close(inferno_figure)
 
 print("✓ Saved :", INFERNO_PREVIEW)
 
@@ -856,7 +863,7 @@ print("✓ Saved :", INFERNO_PREVIEW)
 # ----------------------------------------------------------
 
 
-plt.figure(figsize=(9, 5))
+histogram_figure = plt.figure(figsize=(9, 5), dpi=100)
 
 plt.hist(
     thermal_png.ravel(),
@@ -876,13 +883,13 @@ plt.grid(True)
 # Save histogram
 plt.savefig(
     str(HISTOGRAM_PREVIEW),
-    dpi=300,
+    dpi=100,
     bbox_inches="tight"
 )
 
 plt.show()
 
-plt.close()
+plt.close(histogram_figure)
 
 print("✓ Histogram Saved :", HISTOGRAM_PREVIEW)
 # ----------------------------------------------------------
@@ -896,8 +903,9 @@ print("Image Shape      :", thermal_png.shape)
 print("Data Type        :", thermal_png.dtype)
 print("Minimum Pixel    :", np.min(thermal_png))
 print("Maximum Pixel    :", np.max(thermal_png))
-print("Mean Pixel       : {:.2f}".format(np.mean(thermal_png)))
-print("Standard Deviation : {:.2f}".format(np.std(thermal_png)))
+pixel_mean, pixel_std = cv2.meanStdDev(thermal_png)
+print("Mean Pixel       : {:.2f}".format(float(pixel_mean[0, 0])))
+print("Standard Deviation : {:.2f}".format(float(pixel_std[0, 0])))
 
 print("-" * 40)
 

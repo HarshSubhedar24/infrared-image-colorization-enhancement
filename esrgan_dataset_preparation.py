@@ -481,6 +481,7 @@ def enhance_thermal_image(
     overlap: int = 32,
     device: str | None = None,
     mixed_precision: bool = True,
+    contrast_stretch: bool = True,
 ) -> Path:
     """Run overlapped tiled inference and write one complete GeoTIFF.
 
@@ -620,8 +621,59 @@ def enhance_thermal_image(
                             flush=True,
                         )
 
+    if contrast_stretch:
+        _stretch_enhanced_geotiff(output_path)
+
     print(f"Enhanced image saved: {output_path}")
     return output_path
+
+
+def _stretch_enhanced_geotiff(
+    image_path: Path,
+    low_percentile: float = 2.0,
+    high_percentile: float = 98.0,
+) -> None:
+    """Apply one global contrast stretch to a uint8 GeoTIFF in windows."""
+    sample_values: list[np.ndarray] = []
+    sample_limit = 4096
+
+    with rasterio.open(image_path) as source:
+        for _, window in source.block_windows(1):
+            values = source.read(1, window=window)
+            if values.size == 0:
+                continue
+            step = max(1, values.size // sample_limit)
+            sample_values.append(values.ravel()[::step].copy())
+
+    if not sample_values:
+        raise RuntimeError(f"Enhanced image contains no pixels: {image_path}")
+
+    samples = np.concatenate(sample_values)
+    low_value, high_value = np.percentile(
+        samples,
+        (low_percentile, high_percentile),
+    )
+    if high_value <= low_value:
+        print("Contrast stretch skipped because the pixel range is constant.")
+        return
+
+    with rasterio.open(image_path, "r+") as destination:
+        for _, window in destination.block_windows(1):
+            values = destination.read(1, window=window).astype(np.float32)
+            np.subtract(values, low_value, out=values)
+            np.divide(values, high_value - low_value, out=values)
+            np.multiply(values, 255.0, out=values)
+            np.clip(values, 0, 255, out=values)
+            destination.write(
+                np.rint(values).astype(np.uint8),
+                indexes=1,
+                window=window,
+            )
+
+    print(
+        f"Global contrast stretch applied: "
+        f"{low_value:.2f} -> {high_value:.2f} mapped to 0 -> 255"
+    )
 
 
 def show_thermal_comparison(

@@ -17,7 +17,7 @@ if not DATASET_ROOT.is_dir():
 
 checkpoint_path = train_esrgan(
     dataset_root=DATASET_ROOT,
-    epochs=10,
+    epochs=50,
     batch_size=1,
     learning_rate=1e-4,
     device="cuda",
