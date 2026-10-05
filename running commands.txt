@@ -1,0 +1,25 @@
+Run all stages with one scene selection:
+
+C:\Python314\python.exe .\run_pipeline.py
+
+The pipeline asks for the scene once, then asks for confirmation before
+starting each stage.
+
+Run individual stages independently:
+
+1) Prepare RGB image
+C:\Python314\python.exe .\rgb_combine.py
+
+2) Prepare thermal image
+C:\Python314\python.exe .\thermal_preprocessing.py
+
+3) Prepare the ESRGAN dataset
+C:\Python314\python.exe .\esrgan_dataset_preparation.py
+
+4) Train ESRGAN
+C:\Python314\python.exe .\train_esrgan.py
+
+5) Run ESRGAN inference
+C:\Python314\python.exe .\run_esrgan_inference.py
+
+Each individual script asks you to select its scene when started.

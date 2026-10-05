@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import os
 from pathlib import Path
 
 
@@ -42,6 +43,16 @@ def select_scene_directory(
     default_root: Path = DEFAULT_SCENE_ROOT,
 ) -> Path:
     """Ask the user to select one scene from a directory of scene folders."""
+    selected_from_environment = os.environ.get("INFRARED_SCENE_DIRECTORY")
+    if selected_from_environment:
+        selected_scene = Path(selected_from_environment).expanduser()
+        if not selected_scene.is_dir():
+            raise NotADirectoryError(
+                f"The selected scene folder does not exist: {selected_scene}"
+            )
+        print(f"\nUsing selected scene: {selected_scene}")
+        return selected_scene
+
     root_input = input(
         f"\nEnter the parent folder containing the scenes "
         f"[{default_root}]: "
