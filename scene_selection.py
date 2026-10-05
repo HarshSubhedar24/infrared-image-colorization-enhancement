@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 DEFAULT_SCENE_ROOT = Path(
-    r"C:\Users\subhe\OneDrive\Desktop\datasets"
+    r"D:\datasets"
 )
 
 

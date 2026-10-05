@@ -41,3 +41,23 @@ Infrared Image Colorization and Enhancement for Improved Object Interpretation
                                   │
                                   ▼
                           Final Enhanced Output
+
+
+
+
+
+
+
+
+Current progression:
+
+
+RGB preparation
+        ↓
+Thermal preprocessing
+        ↓
+ESRGAN dataset preparation
+        ↓
+ESRGAN training
+        ↓
+ESRGAN inference

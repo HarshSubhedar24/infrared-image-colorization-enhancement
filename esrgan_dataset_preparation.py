@@ -37,7 +37,7 @@ from scene_selection import select_scene_directory
 # ==========================================================
 
 DEFAULT_BASE_PATH = Path(
-    r"C:\Users\subhe\OneDrive\Desktop\datasets"
+    r"D:\datasets"
 )
 PATCH_SIZE = 512
 SCALE_FACTOR = 4
@@ -478,12 +478,18 @@ def enhance_thermal_image(
     checkpoint_path: Path,
     output_path: Path | None = None,
     tile_size: int = 512,
+    overlap: int = 32,
     device: str | None = None,
+    mixed_precision: bool = True,
 ) -> Path:
-    """Run tiled ESRGAN inference and write one complete georeferenced GeoTIFF."""
+    """Run overlapped tiled inference and write one complete GeoTIFF.
+
+    Each tile includes contextual pixels around its output core. Only the
+    core is written, so adjacent model predictions cannot create hard seams.
+    """
     torch, _ = _load_torch_training_tools()
-    if tile_size <= 0:
-        raise ValueError("tile_size must be positive.")
+    if tile_size <= 0 or overlap < 0 or overlap >= tile_size:
+        raise ValueError("tile_size must be positive and overlap must be smaller than tile_size.")
 
     checkpoint = torch.load(checkpoint_path, map_location="cpu")
     generator, _ = create_esrgan_models(
@@ -495,6 +501,9 @@ def enhance_thermal_image(
     generator.load_state_dict(checkpoint["generator"])
     generator.to(selected_device)
     generator.eval()
+    if selected_device.type == "cuda":
+        torch.backends.cudnn.benchmark = True
+    use_mixed_precision = mixed_precision and selected_device.type == "cuda"
     scale_factor = int(checkpoint.get("scale_factor", SCALE_FACTOR))
 
     if output_path is None:
@@ -504,6 +513,15 @@ def enhance_thermal_image(
     with rasterio.open(thermal_path) as source:
         output_width = source.width * scale_factor
         output_height = source.height * scale_factor
+        total_tiles = (
+            (source.height + tile_size - 1) // tile_size
+        ) * ((source.width + tile_size - 1) // tile_size)
+        processed_tiles = 0
+        print(
+            f"Enhancing {source.width} x {source.height} image "
+            f"({total_tiles} tiles)...",
+            flush=True,
+        )
         profile = source.profile.copy()
         profile.update(
             driver="GTiff",
@@ -521,10 +539,34 @@ def enhance_thermal_image(
                 for left in range(0, source.width, tile_size):
                     height = min(tile_size, source.height - top)
                     width = min(tile_size, source.width - left)
+                    read_left = max(0, left - overlap)
+                    read_top = max(0, top - overlap)
+                    read_right = min(source.width, left + width + overlap)
+                    read_bottom = min(source.height, top + height + overlap)
+                    read_width = read_right - read_left
+                    read_height = read_bottom - read_top
                     tile = source.read(
                         1,
-                        window=Window(left, top, width, height),
+                        window=Window(
+                            read_left,
+                            read_top,
+                            read_width,
+                            read_height,
+                        ),
                     )
+                    pad_left = read_left - (left - overlap)
+                    pad_top = read_top - (top - overlap)
+                    pad_right = (left + width + overlap) - read_right
+                    pad_bottom = (top + height + overlap) - read_bottom
+                    if any((pad_left, pad_top, pad_right, pad_bottom)):
+                        tile = cv2.copyMakeBorder(
+                            tile,
+                            pad_top,
+                            pad_bottom,
+                            pad_left,
+                            pad_right,
+                            cv2.BORDER_REFLECT_101,
+                        )
                     input_tensor = (
                         torch.from_numpy(tile.copy())
                         .float()
@@ -533,14 +575,32 @@ def enhance_thermal_image(
                         .to(selected_device)
                         / 255.0
                     )
-                    with torch.no_grad():
+                    with torch.inference_mode(), torch.autocast(
+                        device_type=selected_device.type,
+                        dtype=torch.float16,
+                        enabled=use_mixed_precision,
+                    ):
                         enhanced = generator(input_tensor).clamp(0, 1)
+                    crop_top = overlap * scale_factor
+                    crop_left = overlap * scale_factor
+                    enhanced_tile = enhanced[
+                        0,
+                        0,
+                        crop_top:crop_top + height * scale_factor,
+                        crop_left:crop_left + width * scale_factor,
+                    ]
                     enhanced_tile = (
-                        enhanced.squeeze(0).squeeze(0).cpu().numpy() * 255.0
-                    ).round().astype(np.uint8)
+                        enhanced_tile.mul(255.0)
+                        .round()
+                        .to(dtype=torch.uint8)
+                        .cpu()
+                        .numpy()
+                    )
+                    del input_tensor, enhanced, tile
+                    enhanced_tile = np.ascontiguousarray(enhanced_tile)
                     destination.write(
                         enhanced_tile,
-                        1,
+                        indexes=1,
                         window=Window(
                             left * scale_factor,
                             top * scale_factor,
@@ -548,11 +608,87 @@ def enhance_thermal_image(
                             height * scale_factor,
                         ),
                     )
-                    del tile, input_tensor, enhanced, enhanced_tile
-                    gc.collect()
+                    del enhanced_tile
+                    processed_tiles += 1
+                    if processed_tiles % 100 == 0:
+                        if selected_device.type == "cuda":
+                            torch.cuda.empty_cache()
+                        gc.collect()
+                    if processed_tiles == 1 or processed_tiles % 100 == 0 or processed_tiles == total_tiles:
+                        print(
+                            f"Tile progress: {processed_tiles}/{total_tiles}",
+                            flush=True,
+                        )
 
     print(f"Enhanced image saved: {output_path}")
     return output_path
+
+
+def show_thermal_comparison(
+    original_path: Path,
+    enhanced_path: Path,
+    preview_size: int = 1200,
+    comparison_path: Path | None = None,
+) -> None:
+    """Save and display original and enhanced thermal images with dimensions."""
+    if preview_size <= 0:
+        raise ValueError("preview_size must be positive.")
+    if comparison_path is None:
+        comparison_path = enhanced_path.parent / "Thermal_Before_After_Comparison.png"
+    comparison_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def read_preview(path: Path) -> tuple[np.ndarray, int, int]:
+        with rasterio.open(path) as source:
+            width, height = source.width, source.height
+            preview_scale = min(1.0, preview_size / max(width, height))
+            preview_width = max(1, round(width * preview_scale))
+            preview_height = max(1, round(height * preview_scale))
+            image = source.read(
+                1,
+                out_shape=(1, preview_height, preview_width),
+                resampling=rasterio.enums.Resampling.bilinear,
+            )
+        return image, width, height
+
+    original, original_width, original_height = read_preview(original_path)
+    enhanced, enhanced_width, enhanced_height = read_preview(enhanced_path)
+
+    figure, axes = plt.subplots(1, 2, figsize=(16, 8), constrained_layout=True)
+    for axis, image, title, width, height in (
+        (
+            axes[0],
+            original,
+            "Before ESRGAN",
+            original_width,
+            original_height,
+        ),
+        (
+            axes[1],
+            enhanced,
+            "After ESRGAN",
+            enhanced_width,
+            enhanced_height,
+        ),
+    ):
+        display_image = axis.imshow(image, cmap="gray", vmin=0, vmax=255)
+        axis.set_title(
+            f"{title}\n"
+            f"Size: {width} x {height} pixels\n"
+            f"Pixel range: {image.min():.1f} - {image.max():.1f} | "
+            f"Mean: {image.mean():.1f}",
+            fontsize=11,
+        )
+        axis.set_xlabel("Pixel X")
+        axis.set_ylabel("Pixel Y")
+        figure.colorbar(display_image, ax=axis, fraction=0.046, pad=0.04)
+
+    figure.suptitle(
+        "Thermal Image Comparison (preview pixels shown with bilinear resampling)",
+        fontsize=14,
+    )
+    figure.savefig(comparison_path, dpi=150, bbox_inches="tight")
+    print(f"Comparison preview saved: {comparison_path}")
+    plt.show()
 
 
 @dataclass(frozen=True)
