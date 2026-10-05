@@ -704,15 +704,18 @@ def show_thermal_comparison(
 
     original, original_width, original_height = read_preview(original_path)
     enhanced, enhanced_width, enhanced_height = read_preview(enhanced_path)
+    original_size_mb = original_path.stat().st_size / (1024 ** 2)
+    enhanced_size_mb = enhanced_path.stat().st_size / (1024 ** 2)
 
     figure, axes = plt.subplots(1, 2, figsize=(16, 8), constrained_layout=True)
-    for axis, image, title, width, height in (
+    for axis, image, title, width, height, size_mb in (
         (
             axes[0],
             original,
             "Before ESRGAN",
             original_width,
             original_height,
+            original_size_mb,
         ),
         (
             axes[1],
@@ -720,12 +723,14 @@ def show_thermal_comparison(
             "After ESRGAN",
             enhanced_width,
             enhanced_height,
+            enhanced_size_mb,
         ),
     ):
         display_image = axis.imshow(image, cmap="gray", vmin=0, vmax=255)
         axis.set_title(
             f"{title}\n"
-            f"Size: {width} x {height} pixels\n"
+            f"Image size: {width} x {height} pixels\n"
+            f"File size: {size_mb:.2f} MB\n"
             f"Pixel range: {image.min():.1f} - {image.max():.1f} | "
             f"Mean: {image.mean():.1f}",
             fontsize=11,
@@ -734,8 +739,12 @@ def show_thermal_comparison(
         axis.set_ylabel("Pixel Y")
         figure.colorbar(display_image, ax=axis, fraction=0.046, pad=0.04)
 
+    scale_x = enhanced_width / original_width
+    scale_y = enhanced_height / original_height
     figure.suptitle(
-        "Thermal Image Comparison (preview pixels shown with bilinear resampling)",
+        "Thermal Image Comparison\n"
+        "(preview pixels shown with bilinear resampling)\n"
+        f"Enhancement scale: {scale_x:.1f}x width x {scale_y:.1f}x height",
         fontsize=14,
     )
     figure.savefig(comparison_path, dpi=150, bbox_inches="tight")
