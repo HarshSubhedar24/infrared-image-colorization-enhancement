@@ -16,6 +16,7 @@ STAGES = (
     ("ESRGAN dataset preparation", "esrgan_dataset_preparation.py"),
     ("ESRGAN training", "train_esrgan.py"),
     ("ESRGAN inference", "run_esrgan_inference.py"),
+    ("GIS cleanup and north-up reprojection", "clean_enhanced_thermal.py"),
 )
 
 
