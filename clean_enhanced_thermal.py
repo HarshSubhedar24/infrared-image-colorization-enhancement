@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import tempfile
 
 import numpy as np
 import rasterio
@@ -69,93 +70,90 @@ def clean_enhanced_thermal(
             f"to a north-up grid ({target_width} x {target_height})..."
         )
 
-        mask_scale = max(1, int(max(target_width, target_height) / 2048))
-        mask_width = max(1, (target_width + mask_scale - 1) // mask_scale)
-        mask_height = max(1, (target_height + mask_scale - 1) // mask_scale)
-        mask_transform = target_transform * Affine.scale(mask_scale, mask_scale)
-        valid_mask = np.zeros((mask_height, mask_width), dtype=np.uint8)
-        _reproject_in_windows(
-            source=enhanced,
-            destination=valid_mask,
-            source_transform=enhanced_transform,
-            destination_transform=mask_transform,
-            source_crs=source_crs,
-            destination_crs=source_crs,
-            source_nodata=source_nodata,
-            destination_nodata=0,
-            resampling=Resampling.nearest,
+        temporary_source = _make_georeferenced_source(
+            enhanced,
+            enhanced_transform,
+            source_crs,
+            source_nodata,
         )
-        valid_rows, valid_cols = np.nonzero(valid_mask)
-        if valid_rows.size == 0:
-            raise ValueError("No valid pixels were found after NoData masking.")
+        try:
+            with rasterio.open(temporary_source) as source:
+                mask_scale = max(1, int(max(target_width, target_height) / 2048))
+                mask_width = max(1, (target_width + mask_scale - 1) // mask_scale)
+                mask_height = max(1, (target_height + mask_scale - 1) // mask_scale)
+                mask_transform = target_transform * Affine.scale(mask_scale, mask_scale)
+                valid_mask = np.zeros((mask_height, mask_width), dtype=np.uint8)
+                reproject(
+                    source=rasterio.band(source, 1),
+                    destination=valid_mask,
+                    dst_transform=mask_transform,
+                    dst_crs=source_crs,
+                    dst_nodata=0,
+                    resampling=Resampling.nearest,
+                )
+                # ESRGAN can leave 1-2 intensity values in black padding after
+                # contrast stretching; exclude those edge artifacts as NoData.
+                valid_threshold = 2 if enhanced.dtypes[0] == "uint8" else source_nodata
+                valid_rows, valid_cols = np.nonzero(valid_mask > valid_threshold)
+                if valid_rows.size == 0:
+                    raise ValueError("No valid pixels were found after NoData masking.")
 
-        row_start = max(0, int(valid_rows.min()) * mask_scale - mask_scale)
-        row_stop = min(target_height, int(valid_rows.max() + 1) * mask_scale + mask_scale)
-        col_start = max(0, int(valid_cols.min()) * mask_scale - mask_scale)
-        col_stop = min(target_width, int(valid_cols.max() + 1) * mask_scale + mask_scale)
-        crop_window = Window(
-            col_start,
-            row_start,
-            col_stop - col_start,
-            row_stop - row_start,
-        )
-        cropped_transform = rasterio.windows.transform(crop_window, target_transform)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        profile = enhanced.profile.copy()
-        profile.update(
-            driver="GTiff",
-            width=int(crop_window.width),
-            height=int(crop_window.height),
-            count=1,
-            dtype=enhanced.dtypes[0],
-            crs=source_crs,
-            transform=cropped_transform,
-            nodata=0,
-            compress="lzw",
-            BIGTIFF="IF_SAFER",
-        )
-        if profile["width"] >= 256 and profile["height"] >= 256:
-            profile.update(tiled=True, blockxsize=256, blockysize=256)
-        else:
-            profile.pop("tiled", None)
-            profile.pop("blockxsize", None)
-            profile.pop("blockysize", None)
+                row_start = max(0, int(valid_rows.min()) * mask_scale - mask_scale)
+                row_stop = min(target_height, int(valid_rows.max() + 1) * mask_scale + mask_scale)
+                col_start = max(0, int(valid_cols.min()) * mask_scale - mask_scale)
+                col_stop = min(target_width, int(valid_cols.max() + 1) * mask_scale + mask_scale)
+                crop_window = Window(col_start, row_start, col_stop - col_start, row_stop - row_start)
+                cropped_transform = rasterio.windows.transform(crop_window, target_transform)
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                profile = enhanced.profile.copy()
+                profile.update(driver="GTiff", width=int(crop_window.width), height=int(crop_window.height),
+                               count=1, dtype=enhanced.dtypes[0], crs=source_crs,
+                               transform=cropped_transform, nodata=0, compress="lzw", BIGTIFF="IF_SAFER")
+                if profile["width"] >= 256 and profile["height"] >= 256:
+                    profile.update(tiled=True, blockxsize=256, blockysize=256)
+                else:
+                    profile.pop("tiled", None)
+                    profile.pop("blockxsize", None)
+                    profile.pop("blockysize", None)
 
-        with rasterio.open(output_path, "w", **profile) as destination:
-            with WarpedVRT(
-                enhanced,
-                src_crs=source_crs,
-                src_transform=enhanced_transform,
-                src_nodata=source_nodata,
-                crs=source_crs,
-                transform=cropped_transform,
-                width=int(crop_window.width),
-                height=int(crop_window.height),
-                nodata=0,
-                resampling=Resampling.bilinear,
-            ) as warped:
-                for top in range(0, destination.height, 1024):
-                    for left in range(0, destination.width, 1024):
-                        window = Window(
-                            left,
-                            top,
-                            min(1024, destination.width - left),
-                            min(1024, destination.height - top),
-                        )
-                        destination.write(warped.read(1, window=window), 1, window=window)
-            destination.update_tags(
-                source_file=str(enhanced_path),
-                processing="NoData border crop and north-up reprojection",
-                resampling="bilinear",
-            )
+                with rasterio.open(output_path, "w", **profile) as destination:
+                    with WarpedVRT(source, transform=cropped_transform,
+                                   width=destination.width, height=destination.height,
+                                   nodata=0, resampling=Resampling.bilinear) as warped:
+                        _write_warped_windows(warped, destination)
+                    destination.update_tags(source_file=str(enhanced_path),
+                                            processing="NoData border crop and north-up reprojection",
+                                            resampling="bilinear")
+        finally:
+            Path(temporary_source).unlink(missing_ok=True)
 
     print(f"Clean north-up thermal raster saved: {output_path}")
     return output_path
 
 
-def _reproject_in_windows(
-    source: rasterio.io.DatasetReader,
-    destination: rasterio.io.DatasetWriter | np.ndarray,
+def _make_georeferenced_source(dataset, transform, crs, nodata):
+    """Create a disk-backed source with the corrected geotransform."""
+    handle = tempfile.NamedTemporaryFile(suffix=".tif", delete=False)
+    handle.close()
+    profile = dataset.profile.copy()
+    profile.update(driver="GTiff", crs=crs, transform=transform, nodata=nodata, compress="lzw")
+    with rasterio.open(handle.name, "w", **profile) as destination:
+        for window in dataset.block_windows(1):
+            destination.write(dataset.read(1, window=window[1]), 1, window=window[1])
+    return handle.name
+
+
+def _write_warped_windows(source, destination, window_size=1024):
+    for top in range(0, destination.height, window_size):
+        for left in range(0, destination.width, window_size):
+            window = Window(left, top, min(window_size, destination.width - left),
+                            min(window_size, destination.height - top))
+            destination.write(source.read(1, window=window), 1, window=window)
+
+
+def _reproject_to_array_windows(
+    source: rasterio.band,
+    destination: np.ndarray,
     source_transform: Affine,
     destination_transform: Affine,
     source_crs: object,
@@ -165,30 +163,61 @@ def _reproject_in_windows(
     resampling: Resampling,
     window_size: int = 1024,
 ) -> None:
-    """Reproject source windows without relying on the source dataset transform."""
-    destination_is_array = isinstance(destination, np.ndarray)
-    first_window = True
-    for top in range(0, source.height, window_size):
-        for left in range(0, source.width, window_size):
-            height = min(window_size, source.height - top)
-            width = min(window_size, source.width - left)
+    """Reproject a source band into a bounded array window by window."""
+    for top in range(0, destination.shape[0], window_size):
+        for left in range(0, destination.shape[1], window_size):
+            height = min(window_size, destination.shape[0] - top)
+            width = min(window_size, destination.shape[1] - left)
             window = Window(left, top, width, height)
-            values = source.read(1, window=window)
-            window_transform = source_transform * Affine.translation(left, top)
-            target = destination if destination_is_array else rasterio.band(destination, 1)
+            target = np.empty((height, width), dtype=destination.dtype)
             reproject(
-                source=values,
+                source=source,
                 destination=target,
-                src_transform=window_transform,
+                src_transform=source_transform,
                 src_crs=source_crs,
                 src_nodata=source_nodata,
-                dst_transform=destination_transform,
+                dst_transform=destination_transform * Affine.translation(left, top),
                 dst_crs=destination_crs,
                 dst_nodata=destination_nodata,
-                init_dest_nodata=first_window,
+                init_dest_nodata=True,
                 resampling=resampling,
             )
-            first_window = False
+            destination[window.row_off : window.row_off + height,
+                        window.col_off : window.col_off + width] = target
+
+
+def _reproject_to_dataset_windows(
+    source: rasterio.band,
+    destination: rasterio.io.DatasetWriter,
+    source_transform: Affine,
+    destination_transform: Affine,
+    source_crs: object,
+    destination_crs: object,
+    source_nodata: float,
+    destination_nodata: float,
+    resampling: Resampling,
+    window_size: int = 1024,
+) -> None:
+    """Reproject a source band directly into tiled output windows."""
+    for top in range(0, destination.height, window_size):
+        for left in range(0, destination.width, window_size):
+            height = min(window_size, destination.height - top)
+            width = min(window_size, destination.width - left)
+            window = Window(left, top, width, height)
+            target = np.empty((height, width), dtype=destination.dtypes[0])
+            reproject(
+                source=source,
+                destination=target,
+                src_transform=source_transform,
+                src_crs=source_crs,
+                src_nodata=source_nodata,
+                dst_transform=destination_transform * Affine.translation(left, top),
+                dst_crs=destination_crs,
+                dst_nodata=destination_nodata,
+                init_dest_nodata=True,
+                resampling=resampling,
+            )
+            destination.write(target, 1, window=window)
 
 
 def main() -> None:
