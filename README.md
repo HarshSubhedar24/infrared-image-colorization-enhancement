@@ -61,3 +61,5 @@ ESRGAN dataset preparation
 ESRGAN training
         ↓
 ESRGAN inference
+        ↓
+Pix2Pix thermal alignment to RGB grid

@@ -22,7 +22,7 @@ C:\Python314\python.exe .\train_esrgan.py
 5) Run ESRGAN inference
 C:\Python314\python.exe .\run_esrgan_inference.py
 
-6) Crop borders and create a north-up thermal GeoTIFF
-C:\Python314\python.exe .\clean_enhanced_thermal.py
+6) Align enhanced thermal image to the RGB grid for Pix2Pix
+C:\Python314\python.exe .\align_enhanced_thermal.py
 
 Each individual script asks you to select its scene when started.
