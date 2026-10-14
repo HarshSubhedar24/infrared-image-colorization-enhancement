@@ -281,6 +281,48 @@ D:\datasets\ESRGAN_Combined_Dataset\
 Scene-level splitting prevents patches from the same scene appearing in
 multiple splits.
 
+### Why the combined dataset file is important
+
+`prepare_combined_esrgan_dataset.py` separates ESRGAN model training from
+individual scene processing. It creates one reusable training dataset from
+all scenes that already have thermal preprocessing outputs.
+
+Without this file, the project would need to prepare a separate dataset and
+train a separate ESRGAN checkpoint for every scene. That approach repeats
+the same expensive training work and can produce scene-specific models that
+do not generalize well to new locations.
+
+The combined-dataset workflow provides these advantages:
+
+- **Train once, reuse many times:** train one shared checkpoint and use it
+  for new scenes without retraining.
+- **Better generalization:** expose the model to different terrain, thermal
+  ranges, seasons, and geographic areas.
+- **Reliable evaluation:** split complete scenes rather than randomly mixing
+  patches from one scene across train, validation, and test sets.
+- **Reproducible experiments:** record the seed, source scenes, split
+  assignments, patch settings, and generated files in `metadata.json`.
+- **Efficient processing:** extract manageable image patches instead of
+  loading complete Landsat scenes into memory.
+
+This file is part of the **shared ESRGAN training workflow**, not the normal
+new-scene processing workflow. Run it when creating or updating the shared
+model, followed by `train_esrgan.py`:
+
+```text
+prepare_combined_esrgan_dataset.py
+                         |
+                         v
+                   train_esrgan.py
+                         |
+                         v
+            shared esrgan_epoch_0050.pt
+```
+
+When only processing a new scene, run `run_pipeline.py`. The pipeline
+reuses the existing shared checkpoint and does not run this dataset
+preparation or ESRGAN training stage automatically.
+
 The default dataset ratios are:
 
 ```text
