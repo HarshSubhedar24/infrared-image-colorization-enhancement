@@ -1,28 +1,90 @@
-Run all stages with one scene selection:
+PROCESS A NEW SCENE
+
+Run all processing stages with one scene selection:
 
 C:\Python314\python.exe .\run_pipeline.py
 
-The pipeline asks for the scene once, then asks for confirmation before
-starting each stage.
+The pipeline asks for the scene once, then runs these stages automatically:
 
-Run individual stages independently:
+1. RGB generation
+2. Thermal preprocessing
+3. ESRGAN inference using the shared checkpoint
+4. Thermal alignment to the RGB grid
+5. Pix2Pix dataset preparation
 
-1) Prepare RGB image
-C:\Python314\python.exe .\rgb_combine.py
+The new scene must contain:
 
-2) Prepare thermal image
-C:\Python314\python.exe .\thermal_preprocessing.py
+..._SR_B2.TIF
+..._SR_B3.TIF
+..._SR_B4.TIF
+..._ST_B10.TIF
 
-3) Prepare the ESRGAN dataset
-C:\Python314\python.exe .\esrgan_dataset_preparation.py
+Thermal preprocessing is run automatically for a new scene. The shared
+ESRGAN model is reused; ESRGAN is not retrained for every scene.
 
-4) Train ESRGAN
+The shared checkpoint must already exist:
+
+D:\datasets\ESRGAN_Combined_Dataset\checkpoints\esrgan_epoch_0050.pt
+
+TRAIN THE SHARED ESRGAN MODEL
+
+Run these commands once, or rerun them when the shared model needs updating.
+
+1) Prepare one combined ESRGAN dataset from multiple preprocessed scenes
+
+C:\Python314\python.exe .\prepare_combined_esrgan_dataset.py
+
+This scans D:\datasets and uses scenes containing:
+
+Output\Thermal_PNG\Thermal_Image.png
+
+2) Train ESRGAN once on the combined dataset
+
 C:\Python314\python.exe .\train_esrgan.py
 
-5) Run ESRGAN inference
+The checkpoint is saved to:
+
+D:\datasets\ESRGAN_Combined_Dataset\checkpoints\esrgan_epoch_0050.pt
+
+PROCESSING COMMANDS
+
+Run individual stages independently when rerunning one stage:
+
+1) Prepare RGB image for the selected scene
+C:\Python314\python.exe .\rgb_combine.py
+
+2) Prepare thermal image for a new scene
+C:\Python314\python.exe .\thermal_preprocessing.py
+
+3) Run ESRGAN inference with the shared checkpoint
 C:\Python314\python.exe .\run_esrgan_inference.py
 
-6) Align enhanced thermal image to the RGB grid for Pix2Pix
+4) Align enhanced thermal image to the RGB grid for Pix2Pix
 C:\Python314\python.exe .\align_enhanced_thermal.py
 
+5) Prepare the Pix2Pix dataset
+C:\Python314\python.exe .\pix2pix_dataset_preparation.py
+
 Each individual script asks you to select its scene when started.
+
+OPTIONAL: ADD A NEW SCENE TO FUTURE ESRGAN TRAINING
+
+After thermal preprocessing has completed for the new scene, rebuild the
+combined dataset:
+
+C:\Python314\python.exe .\prepare_combined_esrgan_dataset.py
+
+Then retrain the shared model:
+
+C:\Python314\python.exe .\train_esrgan.py
+
+This is optional. Do not run these commands just to process a new scene.
+
+EXPECTED OUTPUTS FOR A NEW SCENE
+
+Output\RGB_Image.png
+Output\Thermal_PNG\Thermal_Image.png
+Output\Thermal_TIFF\Temperature_Celsius.tif
+Output\Enhanced_Thermal\Enhanced_Thermal_Image.tif
+Output\Enhanced_Thermal\Enhanced_Thermal_Pix2Pix.tif
+Output\Pix2Pix_Dataset\
