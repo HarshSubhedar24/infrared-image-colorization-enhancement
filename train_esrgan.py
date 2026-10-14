@@ -1,22 +1,22 @@
-from pathlib import Path
-
 from esrgan_dataset_preparation import train_esrgan
-from scene_selection import select_scene_directory
+from pathlib import Path
+from scene_selection import DEFAULT_SCENE_ROOT
 
 
-SCENE_DIRECTORY = select_scene_directory()
-DATASET_ROOT = SCENE_DIRECTORY / "Output" / "ESRGAN_Dataset"
+DATASET_ROOT = DEFAULT_SCENE_ROOT / "ESRGAN_Combined_Dataset"
+CHECKPOINT_ROOT = DATASET_ROOT / "checkpoints"
 
 if not DATASET_ROOT.is_dir():
     raise FileNotFoundError(
-        f"ESRGAN dataset was not found for {SCENE_DIRECTORY.name}: "
+        f"Combined ESRGAN dataset was not found: "
         f"{DATASET_ROOT}\n"
-        "Prepare the ESRGAN dataset for this scene before training."
+        "Run prepare_combined_esrgan_dataset.py first."
     )
 
 
 checkpoint_path = train_esrgan(
     dataset_root=DATASET_ROOT,
+    checkpoint_directory=CHECKPOINT_ROOT,
     epochs=50,
     batch_size=1,
     learning_rate=1e-4,

@@ -70,7 +70,7 @@ Landsat 8/9 scene
 | ESRGAN training | Complete |
 | ESRGAN inference | Complete |
 | Thermal alignment to RGB grid | Complete |
-| Pix2Pix dataset preparation | Planned |
+| Pix2Pix dataset preparation | Complete |
 | Pix2Pix training | Planned |
 | Colorized RGB generation | Planned |
 | Evaluation | Planned |
@@ -86,11 +86,12 @@ thermal input for Pix2Pix.
 | File | Purpose |
 |---|---|
 | `scene_selection.py` | Selects scenes interactively and supports scene reuse through `INFRARED_SCENE_DIRECTORY`. |
-| `run_pipeline.py` | Runs the implemented stages sequentially with confirmation before each stage. |
+| `run_pipeline.py` | Selects one scene and runs all implemented stages sequentially. |
 | `rgb_combine.py` | Reads SR_B4, SR_B3, and SR_B2 in windows, applies percentile stretching, and writes an RGB PNG. |
 | `thermal_preprocessing.py` | Processes ST_B10 in memory-safe windows, converts values to Celsius, writes thermal TIFF/PNG outputs, and creates previews. |
-| `esrgan_dataset_preparation.py` | Builds paired thermal patches, defines the ESRGAN model, trains checkpoints, runs tiled inference, and creates comparison previews. |
-| `train_esrgan.py` | Standalone 50-epoch ESRGAN training entry point. |
+| `esrgan_dataset_preparation.py` | Builds a legacy per-scene paired dataset, defines the ESRGAN model, trains checkpoints, runs tiled inference, and creates comparison previews. |
+| `prepare_combined_esrgan_dataset.py` | Combines thermal patches from multiple preprocessed scenes using scene-level train/validation/test splits. |
+| `train_esrgan.py` | Standalone 50-epoch shared ESRGAN training entry point. |
 | `run_esrgan_inference.py` | Standalone ESRGAN inference entry point. |
 | `align_enhanced_thermal.py` | Warps the enhanced thermal raster onto the original georeferenced thermal/RGB grid. |
 | `running commands.txt` | Windows commands for the complete pipeline and individual stages. |
@@ -131,10 +132,7 @@ scene_001\
     ├── Thermal_TIFF\
     │   └── Temperature_Celsius.tif
     ├── ESRGAN_Dataset\
-    │   ├── train\
-    │   ├── validation\
-    │   ├── test\
-    │   └── checkpoints\
+    │   └── (optional legacy per-scene dataset)\
     └── Enhanced_Thermal\
         ├── Enhanced_Thermal_Image.tif
         ├── Enhanced_Thermal_Pix2Pix.tif
@@ -167,17 +165,19 @@ From the project directory, run:
 C:\Python314\python.exe .\run_pipeline.py
 ```
 
-The runner asks for confirmation before each stage:
+The runner asks for the scene once and then runs every implemented stage
+automatically in this order:
 
 1. RGB preparation
 2. Thermal preprocessing
-3. ESRGAN dataset preparation
-4. ESRGAN training
-5. ESRGAN inference
-6. Pix2Pix thermal alignment
+3. ESRGAN inference using the shared checkpoint
+4. Pix2Pix thermal alignment
+5. Pix2Pix dataset preparation
 
-If a stage is declined, the pipeline stops without running later stages.
-Individual scripts can still be run independently.
+The shared dataset preparation and training commands are run separately
+before scene processing. The pipeline stops immediately if a processing
+stage fails. Individual scripts can
+still be run independently when a single stage needs to be rerun.
 
 ## Individual commands
 
@@ -251,13 +251,35 @@ such as an NVIDIA RTX 3050 Laptop GPU with approximately 4 GB VRAM.
 
 ### Dataset preparation
 
-The ESRGAN dataset preparation stage:
+The legacy per-scene ESRGAN dataset preparation stage:
 
 - Finds thermal PNG files below the selected scene.
 - Creates paired low-resolution and high-resolution thermal patches.
 - Uses a scale factor of 4.
 - Splits data into training, validation, and test sets.
 - Writes data under `Output\ESRGAN_Dataset`.
+
+For normal use, prepare one combined dataset from multiple scenes:
+
+```powershell
+C:\Python314\python.exe .\prepare_combined_esrgan_dataset.py
+```
+
+This command scans `D:\datasets`, uses scenes whose thermal preprocessing
+output already exists, assigns complete scenes to train/validation/test
+splits, and writes:
+
+```text
+D:\datasets\ESRGAN_Combined_Dataset\
+├── train\
+├── validation\
+├── test\
+├── metadata.json
+└── checkpoints\
+```
+
+Scene-level splitting prevents patches from the same scene appearing in
+multiple splits.
 
 The default dataset ratios are:
 
@@ -269,7 +291,7 @@ Testing:    10%
 
 ### Training configuration
 
-The current standalone training entry point uses:
+The shared-model training entry point uses:
 
 ```text
 Epochs:              50
@@ -282,10 +304,11 @@ Mixed precision:     Enabled where supported
 Adversarial training: Disabled by default
 ```
 
-Checkpoints are stored under:
+Train this shared model once, not once per selected scene. Checkpoints are
+stored under:
 
 ```text
-Output\ESRGAN_Dataset\checkpoints\
+D:\datasets\ESRGAN_Combined_Dataset\checkpoints\
 ```
 
 The expected final checkpoint is:
@@ -320,6 +343,9 @@ The comparison preview includes image dimensions, pixel statistics, and file
 sizes in MB. Similar-looking overview images are expected because large
 images are downsampled for display; the enhanced raster has a higher pixel
 count.
+
+For scene processing, `run_pipeline.py` reuses the shared checkpoint. It
+does not run ESRGAN dataset preparation or ESRGAN training.
 
 ## Pix2Pix alignment
 
@@ -365,10 +391,9 @@ part of the project.
 
 ## Planned Pix2Pix stage
 
-The following files are planned but not yet implemented:
+The following model files are planned but not yet implemented:
 
 ```text
-pix2pix_dataset_preparation.py
 train_pix2pix.py
 run_pix2pix_inference.py
 ```
@@ -399,6 +424,11 @@ The planned model is:
 Before training, paired patches must be visually checked to confirm that
 roads, water, buildings, vegetation, and scene boundaries occupy the same
 locations in both modalities.
+
+The implemented `pix2pix_dataset_preparation.py` creates synchronized
+thermal/RGB PNG patches, writes an `dataset_manifest.json` file, and saves
+paired previews for each split. It uses a deterministic seed and rejects
+patches with excessive thermal or RGB NoData.
 
 ## Planned evaluation
 

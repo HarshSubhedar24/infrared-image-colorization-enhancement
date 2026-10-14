@@ -5,6 +5,7 @@ from esrgan_dataset_preparation import (
     show_thermal_comparison,
 )
 from scene_selection import select_scene_directory
+from scene_selection import DEFAULT_SCENE_ROOT
 
 
 SCENE_DIRECTORY = select_scene_directory()
@@ -13,8 +14,8 @@ OUTPUT_DIRECTORY = SCENE_DIRECTORY / "Output"
 THERMAL_IMAGE = OUTPUT_DIRECTORY / "Thermal_PNG" / "Thermal_Image.png"
 
 CHECKPOINT = (
-    OUTPUT_DIRECTORY
-    / "ESRGAN_Dataset"
+    DEFAULT_SCENE_ROOT
+    / "ESRGAN_Combined_Dataset"
     / "checkpoints"
     / "esrgan_epoch_0050.pt"
 )
@@ -30,8 +31,8 @@ for required_path in (THERMAL_IMAGE, CHECKPOINT):
         raise FileNotFoundError(
             f"Required file was not found for {SCENE_DIRECTORY.name}: "
             f"{required_path}\n"
-            "Prepare the thermal image and train an ESRGAN checkpoint for "
-            "this scene first."
+            "Run prepare_combined_esrgan_dataset.py and train_esrgan.py once "
+            "before processing scenes."
         )
 
 
