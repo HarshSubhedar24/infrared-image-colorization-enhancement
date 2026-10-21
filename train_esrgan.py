@@ -1,9 +1,8 @@
 from esrgan_dataset_preparation import train_esrgan
 from pathlib import Path
-from scene_selection import DEFAULT_SCENE_ROOT
 
 
-DATASET_ROOT = DEFAULT_SCENE_ROOT / "ESRGAN_Combined_Dataset"
+DATASET_ROOT = Path(__file__).resolve().parent / "ESRGAN_Combined_Dataset"
 CHECKPOINT_ROOT = DATASET_ROOT / "checkpoints"
 
 if not DATASET_ROOT.is_dir():

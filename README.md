@@ -98,16 +98,12 @@ thermal input for Pix2Pix.
 
 ## Dataset layout
 
-The default scene root is:
+The scene is selected at runtime using a Windows folder picker. The picker
+can browse the entire device, so scene data can be stored on any drive or in
+any folder. Each scene is expected to be in its own directory, for example:
 
 ```text
-D:\datasets
-```
-
-Each scene is expected to be in its own directory, for example:
-
-```text
-D:\datasets\scene_001\
+<selected scene root>\scene_001\
 ```
 
 Landsat input files should be inside the selected scene directory. The band
@@ -143,9 +139,8 @@ scene_001\
 
 Every standalone script can select a scene interactively. The scene selector:
 
-- Uses `D:\datasets` by default.
-- Sorts scene names naturally, so `scene_010` follows `scene_009`.
-- Accepts either a scene number or a complete scene path.
+- Opens the Windows folder picker automatically.
+- Lets you browse the entire device and select a scene folder directly.
 - Reports existing output files before processing.
 
 The complete pipeline selects the scene once and passes it to every child
@@ -265,12 +260,13 @@ For normal use, prepare one combined dataset from multiple scenes:
 C:\Python314\python.exe .\prepare_combined_esrgan_dataset.py
 ```
 
-This command scans `D:\datasets`, uses scenes whose thermal preprocessing
-output already exists, assigns complete scenes to train/validation/test
-splits, and writes:
+This command asks for the parent folder containing scenes, uses scenes whose
+thermal preprocessing output already exists, assigns complete scenes to
+train/validation/test splits, and writes the shared dataset inside the
+project directory:
 
 ```text
-D:\datasets\ESRGAN_Combined_Dataset\
+<project directory>\ESRGAN_Combined_Dataset\
 ├── train\
 ├── validation\
 ├── test\
@@ -350,7 +346,7 @@ Train this shared model once, not once per selected scene. Checkpoints are
 stored under:
 
 ```text
-D:\datasets\ESRGAN_Combined_Dataset\checkpoints\
+<project directory>\ESRGAN_Combined_Dataset\checkpoints\
 ```
 
 The expected final checkpoint is:
@@ -388,6 +384,15 @@ count.
 
 For scene processing, `run_pipeline.py` reuses the shared checkpoint. It
 does not run ESRGAN dataset preparation or ESRGAN training.
+
+Checkpoint lookup is location-independent. In order, inference checks:
+
+1. The optional `ESRGAN_CHECKPOINT_PATH` environment variable.
+2. `ESRGAN_Combined_Dataset\checkpoints` inside the project directory.
+3. `ESRGAN_Combined_Dataset\checkpoints` beside the selected scene folder.
+
+This allows datasets and shared checkpoints to remain on any drive without
+hard-coding a drive letter.
 
 ## Pix2Pix alignment
 

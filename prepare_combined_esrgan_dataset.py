@@ -18,7 +18,7 @@ from esrgan_dataset_preparation import (
     create_output_directories,
     find_thermal_image,
 )
-from scene_selection import DEFAULT_SCENE_ROOT
+from scene_selection import DEFAULT_SCENE_ROOT, select_scene_root_directory
 
 
 TRAIN_RATIO = 0.80
@@ -58,7 +58,7 @@ def prepare_combined_dataset(
         **{name: "validation" for name, _ in sources[train_end:validation_end]},
         **{name: "test" for name, _ in sources[validation_end:]},
     }
-    dataset_root = output_root or scenes_root / "ESRGAN_Combined_Dataset"
+    dataset_root = output_root or Path(__file__).resolve().parent / "ESRGAN_Combined_Dataset"
     directories = create_output_directories(dataset_root)
     metadata = []
     lr_size = patch_size // scale_factor
@@ -107,4 +107,4 @@ def prepare_combined_dataset(
 
 
 if __name__ == "__main__":
-    prepare_combined_dataset()
+    prepare_combined_dataset(select_scene_root_directory())

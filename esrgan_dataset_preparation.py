@@ -36,9 +36,7 @@ from scene_selection import select_scene_directory
 # CONFIGURATION
 # ==========================================================
 
-DEFAULT_BASE_PATH = Path(
-    r"D:\datasets"
-)
+DEFAULT_BASE_PATH = Path.cwd()
 PATCH_SIZE = 512
 SCALE_FACTOR = 4
 TRAIN_RATIO = 0.80

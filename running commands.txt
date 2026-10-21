@@ -12,6 +12,9 @@ The pipeline asks for the scene once, then runs these stages automatically:
 4. Thermal alignment to the RGB grid
 5. Pix2Pix dataset preparation
 
+The Windows folder picker opens automatically. Browse the entire device and
+select the scene folder directly.
+
 The new scene must contain:
 
 ..._SR_B2.TIF
@@ -22,9 +25,14 @@ The new scene must contain:
 Thermal preprocessing is run automatically for a new scene. The shared
 ESRGAN model is reused; ESRGAN is not retrained for every scene.
 
-The shared checkpoint must already exist:
+The shared checkpoint must already exist in the project directory:
 
-D:\datasets\ESRGAN_Combined_Dataset\checkpoints\esrgan_epoch_0050.pt
+ESRGAN_Combined_Dataset\checkpoints\esrgan_epoch_0050.pt
+
+If the shared checkpoint is stored beside the selected scene folders instead,
+the pipeline detects it automatically. You can also set an explicit path:
+
+$env:ESRGAN_CHECKPOINT_PATH = "C:\path\to\esrgan_epoch_0050.pt"
 
 TRAIN THE SHARED ESRGAN MODEL
 
@@ -34,7 +42,7 @@ Run these commands once, or rerun them when the shared model needs updating.
 
 C:\Python314\python.exe .\prepare_combined_esrgan_dataset.py
 
-This scans D:\datasets and uses scenes containing:
+This asks for the parent folder containing scenes and uses scenes containing:
 
 Output\Thermal_PNG\Thermal_Image.png
 
@@ -44,7 +52,7 @@ C:\Python314\python.exe .\train_esrgan.py
 
 The checkpoint is saved to:
 
-D:\datasets\ESRGAN_Combined_Dataset\checkpoints\esrgan_epoch_0050.pt
+ESRGAN_Combined_Dataset\checkpoints\esrgan_epoch_0050.pt
 
 PROCESSING COMMANDS
 
