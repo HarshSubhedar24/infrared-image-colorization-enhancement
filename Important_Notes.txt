@@ -1,0 +1,247 @@
+IMPORTANT NOTES
+===============
+
+Project: Infrared Image Colorization and Enhancement for Improved Object Interpretation
+
+MODEL CHECKPOINT DISTRIBUTION
+-----------------------------
+
+The final GUI application should not require every user to manually copy a
+trained checkpoint from the developer's computer.
+
+The trained ESRGAN checkpoint is currently:
+
+    esrgan_epoch_0050.pt
+
+For development or command-line inference, this checkpoint can be stored in:
+
+    ESRGAN_Combined_Dataset\checkpoints\esrgan_epoch_0050.pt
+
+The application can also use an explicitly configured checkpoint path through
+the ESRGAN_CHECKPOINT_PATH environment variable:
+
+    $env:ESRGAN_CHECKPOINT_PATH = "E:\models\esrgan_epoch_0050.pt"
+
+However, a final GUI should manage model files automatically.
+
+RECOMMENDED FINAL GUI APPROACH
+------------------------------
+
+For the academic project demonstration, bundle the trained checkpoints with
+the application installer:
+
+    InfraredColorization\
+    |-- InfraredColorization.exe
+    |-- models\
+    |   |-- esrgan_epoch_0050.pt
+    |   |-- pix2pix_final.pt
+    |-- resources\
+    |-- config\
+
+The GUI should locate models relative to the application directory. It must
+not use a hard-coded path such as:
+
+    C:\Users\subhe\OneDrive\Desktop\be project\...
+
+For a public release, an alternative is to download the models automatically
+on first launch:
+
+    1. Check whether the model exists.
+    2. If it is missing, show download progress.
+    3. Download the model from a trusted hosting location.
+    4. Verify the SHA-256 checksum.
+    5. Store it in the user's application-data directory.
+    6. Load the model.
+
+A suitable per-user model directory is:
+
+    C:\Users\<username>\AppData\Local\InfraredColorization\models\
+
+FIRST-LAUNCH MODEL FLOW
+-----------------------
+
+    Application starts
+            |
+            v
+    Check bundled model
+            |
+       Model found?
+         /       \
+       Yes        No
+       |           |
+    Load model   Download model
+                    |
+                    v
+              Verify checksum
+                    |
+                    v
+                 Load model
+
+WHAT NORMAL USERS NEED
+----------------------
+
+For normal inference, users need:
+
+    - The packaged application
+    - The ESRGAN checkpoint
+    - The Pix2Pix checkpoint
+    - Required runtime dependencies
+    - A valid Landsat scene folder
+
+Users should not need to manually copy:
+
+    - esrgan_epoch_0050.pt
+    - pix2pix_final.pt
+
+Users also should not need to know:
+
+    - Where the checkpoints are stored
+    - How ESRGAN was trained
+    - How Pix2Pix was trained
+    - Which Python scripts are executed
+    - How model paths are configured
+
+TRAINING DATA IS NOT REQUIRED FOR NORMAL INFERENCE
+--------------------------------------------------
+
+These files are only required for retraining, fine-tuning, or research:
+
+    - train\
+    - validation\
+    - test\
+    - metadata.json
+
+The training datasets do not need to be distributed to every normal user.
+
+CURRENT SHARED ESRGAN WORKFLOW
+------------------------------
+
+The project trains ESRGAN once using multiple scenes:
+
+    prepare_combined_esrgan_dataset.py
+                    |
+                    v
+              train_esrgan.py
+                    |
+                    v
+        Shared esrgan_epoch_0050.pt
+                    |
+                    v
+          Process any selected scene
+
+The normal scene-processing pipeline reuses the shared checkpoint and does
+not retrain ESRGAN for every scene.
+
+NEW DEVICE WORKFLOW
+-------------------
+
+If the existing checkpoint is available:
+
+    1. Install the application or project dependencies.
+    2. Copy or install the trained checkpoint into the configured model
+       directory, unless it is bundled or downloaded automatically.
+    3. Select a valid scene folder.
+    4. Run the pipeline.
+
+Retraining is only required when:
+
+    - The checkpoint is missing.
+    - New training scenes should be included.
+    - The model architecture or scale factor changes.
+    - The existing model performs poorly on a new data domain.
+    - Fine-tuning is intentionally required.
+
+FINAL USER EXPERIENCE
+---------------------
+
+The intended final GUI workflow is:
+
+    1. Install the application.
+    2. Launch the GUI.
+    3. Select a Landsat scene folder using the Windows folder picker.
+    4. The application verifies or obtains the required models.
+    5. The pipeline runs automatically.
+    6. The user receives enhanced thermal and colorized RGB outputs.
+
+Users should never be required to manually locate and copy model checkpoints
+from the developer's device.
+
+ESRGAN INFERENCE TIME AND SCENE PROCESSING
+------------------------------------------
+
+ESRGAN training and ESRGAN inference are different operations.
+
+ESRGAN training is performed once using the combined multi-scene dataset:
+
+    prepare_combined_esrgan_dataset.py
+                    |
+                    v
+              train_esrgan.py
+                    |
+                    v
+        Shared esrgan_epoch_0050.pt
+
+ESRGAN inference must be performed once for each scene that needs its own
+enhanced thermal output. The shared checkpoint is reused; the model is not
+trained again for each scene:
+
+    Thermal_Image.png
+            |
+            v
+    Shared ESRGAN checkpoint
+            |
+            v
+    Enhanced_Thermal_Image.tif
+
+Large scenes take time because inference processes every image tile. The
+current tiled inference configuration is:
+
+    Example image size: 7641 x 7781
+    Example tile count: 2352
+    Tile size:          160 x 160
+    Tile overlap:       24 pixels
+    Mixed precision:    Enabled when CUDA is available
+
+Tile overlap provides neighboring context and helps reduce visible seams,
+but it increases the total processing time.
+
+Do not rerun ESRGAN inference unnecessarily. If this output already exists
+and is valid:
+
+    Output\Enhanced_Thermal\Enhanced_Thermal_Image.tif
+
+it can be reused for the later stages:
+
+    align_enhanced_thermal.py
+    pix2pix_dataset_preparation.py
+
+Regenerate ESRGAN inference only when:
+
+    - The enhanced output was deleted or is invalid.
+    - The shared checkpoint was changed.
+    - The inference settings changed.
+    - The thermal input changed.
+    - A new enhancement result is intentionally required.
+
+The normal pipeline currently runs these processing stages:
+
+    RGB preparation
+    Thermal preprocessing
+    ESRGAN inference
+    Pix2Pix thermal alignment
+    Pix2Pix dataset preparation
+
+The shared checkpoint is reused, but inference still runs for each selected
+scene because each scene requires its own enhanced raster. A future pipeline
+improvement can add output-exists checks to skip completed inference
+automatically.
+
+Possible inference speed improvements include:
+
+    - Increase tile size if GPU memory allows.
+    - Carefully reduce tile overlap after checking for seams.
+    - Keep CUDA mixed precision enabled.
+    - Avoid unnecessary repeated cache cleanup.
+    - Process only the required scene area where appropriate.
+    - Add output-exists checks.
+    - Add resume support for interrupted inference.
