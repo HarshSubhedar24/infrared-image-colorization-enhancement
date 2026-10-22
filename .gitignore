@@ -203,6 +203,9 @@ cython_debug/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 
+# Locally generated model datasets and checkpoints
+Pix2Pix_Combined_Dataset/
+
 # Ruff stuff:
 .ruff_cache/
 
