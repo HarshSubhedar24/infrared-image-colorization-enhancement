@@ -54,6 +54,39 @@ The checkpoint is saved to:
 
 ESRGAN_Combined_Dataset\checkpoints\esrgan_epoch_0050.pt
 
+PREPARE THE SHARED PIX2PIX DATASET
+
+Use ten or more prepared scenes. Each scene must contain:
+
+Output\Enhanced_Thermal\Enhanced_Thermal_Pix2Pix.tif
+Output\RGB_Image.png
+
+Run:
+
+C:\Python314\python.exe .\prepare_combined_pix2pix_dataset.py
+
+Select the parent folder containing the scene folders. The script requires
+at least 10 valid scenes, keeps scenes (not individual patches) separated
+between train, validation, and test, and writes:
+
+Pix2Pix_Combined_Dataset\
+    train\
+    validation\
+    test\
+    dataset_manifest.json
+
+TRAIN THE SHARED PIX2PIX MODEL
+
+After the combined dataset has been created, train Pix2Pix once:
+
+C:\Python314\python.exe .\train_pix2pix.py
+
+The shared checkpoints are saved to:
+
+Pix2Pix_Combined_Dataset\checkpoints\pix2pix_best.pt
+Pix2Pix_Combined_Dataset\checkpoints\pix2pix_latest.pt
+Pix2Pix_Combined_Dataset\checkpoints\training_history.json
+
 PROCESSING COMMANDS
 
 Run individual stages independently when rerunning one stage:
@@ -73,7 +106,10 @@ C:\Python314\python.exe .\align_enhanced_thermal.py
 5) Prepare the Pix2Pix dataset
 C:\Python314\python.exe .\pix2pix_dataset_preparation.py
 
-Each individual script asks you to select its scene when started.
+The per-scene processing scripts ask you to select a scene when started.
+The combined Pix2Pix dataset script asks you to select the parent folder
+containing the scenes, and the shared Pix2Pix training script uses the
+project-level combined dataset without selecting a scene.
 
 OPTIONAL: ADD A NEW SCENE TO FUTURE ESRGAN TRAINING
 
@@ -96,3 +132,4 @@ Output\Thermal_TIFF\Temperature_Celsius.tif
 Output\Enhanced_Thermal\Enhanced_Thermal_Image.tif
 Output\Enhanced_Thermal\Enhanced_Thermal_Pix2Pix.tif
 Output\Pix2Pix_Dataset\
+Output\Pix2Pix_Checkpoints\

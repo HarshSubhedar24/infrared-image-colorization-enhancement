@@ -8,8 +8,9 @@ Interpretation**
 This project develops a remote-sensing pipeline for processing Landsat 8/9
 imagery. It prepares visible RGB imagery and thermal imagery, enhances the
 thermal image with a low-memory ESRGAN model, aligns the enhanced thermal
-image to the RGB grid, and prepares the data for a future Pix2Pix
-thermal-to-RGB colorization stage.
+image to the RGB grid, prepares paired patches, and trains a Pix2Pix
+thermal-to-RGB colorization model with a U-Net generator and
+PatchGAN discriminator.
 
 ## Project objective
 
@@ -21,8 +22,7 @@ imagery by:
 3. Creating training data for thermal super-resolution.
 4. Enhancing the thermal image with ESRGAN.
 5. Aligning the enhanced thermal image to the original RGB pixel grid.
-6. Translating the aligned thermal image to a colorized RGB image with Pix2Pix
-   (planned).
+6. Translating the aligned thermal image to a colorized RGB image with Pix2Pix.
 7. Evaluating the generated result with image-quality metrics (planned).
 
 ## Implemented workflow
@@ -71,7 +71,7 @@ Landsat 8/9 scene
 | ESRGAN inference | Complete |
 | Thermal alignment to RGB grid | Complete |
 | Pix2Pix dataset preparation | Complete |
-| Pix2Pix training | Planned |
+| Combined Pix2Pix dataset and shared training | Complete |
 | Colorized RGB generation | Planned |
 | Evaluation | Planned |
 | Final GUI | Planned |
@@ -95,6 +95,9 @@ thermal input for Pix2Pix.
 | `run_esrgan_inference.py` | Standalone ESRGAN inference entry point. |
 | `align_enhanced_thermal.py` | Warps the enhanced thermal raster onto the original georeferenced thermal/RGB grid. |
 | `running commands.txt` | Windows commands for the complete pipeline and individual stages. |
+| `pix2pix_model.py` | Defines the thermal-to-RGB U-Net generator, PatchGAN discriminator, paired dataloader, and resumable training loop. |
+| `prepare_combined_pix2pix_dataset.py` | Builds one scene-level-split Pix2Pix dataset from at least 10 prepared scenes. |
+| `train_pix2pix.py` | Trains Pix2Pix once from the shared combined dataset. |
 
 ## Dataset layout
 
@@ -194,6 +197,15 @@ C:\Python314\python.exe .\run_esrgan_inference.py
 
 # Align enhanced thermal output to the RGB grid
 C:\Python314\python.exe .\align_enhanced_thermal.py
+
+# Prepare paired Pix2Pix patches
+C:\Python314\python.exe .\pix2pix_dataset_preparation.py
+
+# Prepare the shared Pix2Pix dataset from at least 10 scenes
+C:\Python314\python.exe .\prepare_combined_pix2pix_dataset.py
+
+# Train the shared Pix2Pix model once
+C:\Python314\python.exe .\train_pix2pix.py
 ```
 
 ## RGB preparation
@@ -436,14 +448,7 @@ Target: RGB_Image.png
 Do not use the removed `Enhanced_Thermal_Clean.tif` output. It is no longer
 part of the project.
 
-## Planned Pix2Pix stage
-
-The following model files are planned but not yet implemented:
-
-```text
-train_pix2pix.py
-run_pix2pix_inference.py
-```
+## Pix2Pix dataset and model
 
 The planned Pix2Pix dataset will contain paired thermal and RGB patches:
 
@@ -460,7 +465,7 @@ Pix2Pix_Dataset\
     └── rgb\
 ```
 
-The planned model is:
+The model is:
 
 - One-channel enhanced thermal input.
 - Three-channel RGB target.
@@ -476,6 +481,33 @@ The implemented `pix2pix_dataset_preparation.py` creates synchronized
 thermal/RGB PNG patches, writes an `dataset_manifest.json` file, and saves
 paired previews for each split. It uses a deterministic seed and rejects
 patches with excessive thermal or RGB NoData.
+
+## Pix2Pix model and training
+
+`pix2pix_model.py` implements the next model in the workflow:
+
+- A one-channel thermal input is passed to a U-Net generator.
+- The generator produces a three-channel RGB output in the `[-1, 1]` range.
+- A conditional PatchGAN discriminator evaluates thermal/RGB pairs.
+- The generator uses adversarial loss plus an L1 reconstruction loss.
+- The default L1 weight is 100, which preserves scene structure while the
+  adversarial loss encourages realistic color and texture.
+- The training loop uses Adam optimizers, optional CUDA mixed precision, and
+  saves a checkpoint after every epoch.
+- `pix2pix_best.pt` is selected using validation L1 loss, while
+  `pix2pix_latest.pt` is retained for resumable training. Set
+  `PIX2PIX_RESUME_CHECKPOINT` to the latest checkpoint before rerunning
+  `train_pix2pix.py` to resume.
+
+Run `prepare_combined_pix2pix_dataset.py` after at least 10 scenes have
+complete aligned thermal and RGB outputs. It writes
+`Pix2Pix_Combined_Dataset` with scene-level train, validation, and test
+splits. This prevents patches from one scene leaking across splits.
+
+Then run `train_pix2pix.py` once. The shared checkpoint is saved under
+`Pix2Pix_Combined_Dataset\checkpoints` and can later be reused for inference
+on new scenes. To resume from a checkpoint, set
+`PIX2PIX_RESUME_CHECKPOINT` before rerunning the training command.
 
 ## Planned evaluation
 
@@ -534,7 +566,6 @@ CPU execution is possible but substantially slower for large scenes.
 
 ## Known limitations
 
-- Pix2Pix dataset creation and Pix2Pix training are not implemented yet.
 - Colorized RGB generation is not implemented yet.
 - Quantitative evaluation is not implemented yet.
 - RGB PNG output does not retain GeoTIFF CRS metadata by itself.
@@ -547,11 +578,10 @@ CPU execution is possible but substantially slower for large scenes.
 
 ## Recommended next steps
 
-1. Implement `pix2pix_dataset_preparation.py`.
-2. Generate paired thermal/RGB patches from
+1. Generate paired thermal/RGB patches from
    `Enhanced_Thermal_Pix2Pix.tif` and `RGB_Image.png`.
-3. Visually validate patch alignment.
-4. Implement and train the Pix2Pix model.
-5. Add colorized RGB inference.
-6. Add PSNR, SSIM, LPIPS, and FID evaluation.
-7. Add a final GUI after the command-line stages are stable.
+2. Visually validate patch alignment.
+3. Train the Pix2Pix model with `train_pix2pix.py`.
+4. Add colorized RGB inference.
+5. Add PSNR, SSIM, LPIPS, and FID evaluation.
+6. Add a final GUI after the command-line stages are stable.

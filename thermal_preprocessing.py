@@ -785,7 +785,7 @@ print("=" * 60)
 
 print("\n")
 print("=" * 60)
-print("PART 2D : GENERATING PREVIEW")
+print("PART 2D : SAVING PREVIEW FILES")
 print("=" * 60)
 
 # ----------------------------------------------------------
@@ -808,8 +808,6 @@ GRAY_PREVIEW = PREVIEW_FOLDER / "Thermal_Gray_Preview.png"
 
 INFERNO_PREVIEW = PREVIEW_FOLDER / "Thermal_Inferno_Preview.png"
 
-HISTOGRAM_PREVIEW = PREVIEW_FOLDER / "Thermal_Histogram.png"
-
 # ----------------------------------------------------------
 # Preview 1 : Grayscale
 # ----------------------------------------------------------
@@ -827,8 +825,6 @@ plt.savefig(
     dpi=100,
     bbox_inches="tight"
 )
-
-plt.show()
 
 plt.close(gray_figure)
 
@@ -852,46 +848,10 @@ plt.savefig(
     bbox_inches="tight"
 )
 
-plt.show()
-
 plt.close(inferno_figure)
 
 print("✓ Saved :", INFERNO_PREVIEW)
 
-# ----------------------------------------------------------
-# Histogram
-# ----------------------------------------------------------
-
-
-histogram_figure = plt.figure(figsize=(9, 5), dpi=100)
-
-plt.hist(
-    thermal_png.ravel(),
-    bins=256,
-    color="darkred",
-    edgecolor="black"
-)
-
-plt.title("Thermal Image Histogram")
-
-plt.xlabel("Pixel Value (0-255)")
-
-plt.ylabel("Number of Pixels")
-
-plt.grid(True)
-
-# Save histogram
-plt.savefig(
-    str(HISTOGRAM_PREVIEW),
-    dpi=100,
-    bbox_inches="tight"
-)
-
-plt.show()
-
-plt.close(histogram_figure)
-
-print("✓ Histogram Saved :", HISTOGRAM_PREVIEW)
 # ----------------------------------------------------------
 # Image Information
 # ----------------------------------------------------------

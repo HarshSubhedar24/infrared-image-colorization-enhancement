@@ -16,7 +16,6 @@ import glob
 import cv2
 import rasterio
 import numpy as np
-import matplotlib.pyplot as plt
 from pathlib import Path
 from rasterio.windows import Window
 
@@ -137,24 +136,6 @@ with rasterio.open(red_band) as red_src, rasterio.open(green_band) as green_src,
                 del rgb_tile
     print("✓ RGB Image Saved Successfully")
     print("Location :", output_file)
-
-# ==========================================================
-# DISPLAY PREVIEW
-# ==========================================================
-
-print("\nGenerating Preview...")
-
-with rasterio.open(output_file) as output:
-    preview = output.read(
-        out_shape=(3, 1200, 1200),
-        resampling=rasterio.enums.Resampling.bilinear,
-    ).transpose(1, 2, 0)
-
-plt.figure(figsize=(10, 10))
-plt.imshow(preview)
-plt.title("Generated RGB Image")
-plt.axis("off")
-plt.show()
 
 print("\n" + "=" * 60)
 print("PROCESS COMPLETED SUCCESSFULLY")
