@@ -15,7 +15,7 @@ STAGES = (
     ("Thermal preprocessing", "thermal_preprocessing.py"),
     ("ESRGAN inference", "run_esrgan_inference.py"),
     ("Pix2Pix thermal alignment", "align_enhanced_thermal.py"),
-    ("Pix2Pix dataset preparation", "pix2pix_dataset_preparation.py"),
+    ("Pix2Pix inference", "run_pix2pix_inference.py"),
 )
 
 

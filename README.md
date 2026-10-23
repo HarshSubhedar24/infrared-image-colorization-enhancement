@@ -173,12 +173,12 @@ automatically in this order:
 2. Thermal preprocessing
 3. ESRGAN inference using the shared checkpoint
 4. Pix2Pix thermal alignment
-5. Pix2Pix dataset preparation
+5. Four-channel Pix2Pix inference
 
 The shared dataset preparation and training commands are run separately
 before scene processing. The pipeline stops immediately if a processing
-stage fails. Individual scripts can
-still be run independently when a single stage needs to be rerun.
+stage fails. Individual scripts can still be run independently when a
+single stage needs to be rerun.
 
 ## Individual commands
 
@@ -546,13 +546,13 @@ delete the existing checkpoint until the new training run has been validated.
 
 ## Pix2Pix inference
 
-After the shared model has been trained, run:
+After the shared model has been trained, run the complete scene pipeline:
 
 ```powershell
-C:\Python314\python.exe .\run_pix2pix_inference.py
+C:\Python314\python.exe .\run_pipeline.py
 ```
 
-Select a prepared scene. The script loads the four-channel `pix2pix_best.pt`
+The pipeline selects a scene once and loads the four-channel `pix2pix_best.pt`
 and uses both:
 
 ```text

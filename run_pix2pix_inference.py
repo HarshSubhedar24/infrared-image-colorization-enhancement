@@ -253,7 +253,16 @@ def _write_geotiff(path: Path, source: rasterio.DatasetReader, output: np.ndarra
 
 
 def main() -> None:
-    scene_directory = select_scene_directory()
+    configured_scene = os.environ.get("INFRARED_SCENE_DIRECTORY")
+    scene_directory = (
+        Path(configured_scene).expanduser()
+        if configured_scene
+        else select_scene_directory()
+    )
+    if not scene_directory.is_dir():
+        raise FileNotFoundError(
+            f"Selected scene directory does not exist: {scene_directory}"
+        )
     output_directory = scene_directory / "Output"
     thermal_path = (
         output_directory

@@ -10,7 +10,7 @@ The pipeline asks for the scene once, then runs these stages automatically:
 2. Thermal preprocessing
 3. ESRGAN inference using the shared checkpoint
 4. Thermal alignment to the RGB grid
-5. Pix2Pix dataset preparation
+5. Four-channel Pix2Pix inference
 
 The Windows folder picker opens automatically. Browse the entire device and
 select the scene folder directly.
@@ -145,10 +145,7 @@ C:\Python314\python.exe .\run_esrgan_inference.py
 4) Align enhanced thermal image to the RGB grid for Pix2Pix
 C:\Python314\python.exe .\align_enhanced_thermal.py
 
-5) Prepare the Pix2Pix dataset
-C:\Python314\python.exe .\pix2pix_dataset_preparation.py
-
-6) Generate colorized RGB output with the shared Pix2Pix model
+5) Generate colorized RGB output with the shared Pix2Pix model
 C:\Python314\python.exe .\run_pix2pix_inference.py
 
 This uses:
