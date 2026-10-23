@@ -160,8 +160,8 @@ Output\Pix2Pix_Colorized_RGB.tif
 Inference uses 256-pixel tiles with 64-pixel overlap and feathered
 raised-cosine blending to reduce visible tile-grid seams. It preserves 70%
 of the visible RGB input so clouds and fine visible details remain present.
-NoData/background pixels from the aligned thermal raster remain black in the
-output.
+When thermal NoData overlaps a valid RGB pixel, the original RGB pixel is
+preserved. Genuine NoData/background pixels remain black in the output.
 
 The per-scene processing scripts ask you to select a scene when started.
 The combined Pix2Pix dataset script asks you to select the parent folder

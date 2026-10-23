@@ -572,7 +572,9 @@ do not need to fit into GPU memory at once. Neighboring tiles are combined
 with raised-cosine feathering to reduce visible tile-grid seams. The output
 also preserves 70% of the visible RGB input during inference so clouds,
 boundaries, and other high-frequency visible details are not lost through the
-U-Net bottleneck. NoData/background pixels remain black. The GeoTIFF preserves the aligned
+U-Net bottleneck. If the aligned thermal raster contains a NoData hole over a
+valid visible RGB pixel, the original visible pixel is retained instead of
+being replaced with black. Genuine black background pixels remain black. The GeoTIFF preserves the aligned
 thermal raster's dimensions, CRS, and affine transform. The checkpoint is
 searched in `D:\datasets\Pix2Pix_Combined_Dataset\checkpoints` first, then
 the project-local combined dataset, or can be set explicitly with

@@ -166,7 +166,13 @@ def run_pix2pix_inference(
                 )
 
         output = output / np.maximum(weights, 1e-6)
-        output[:, ~valid_pixels] = 0
+        visible_valid = np.any(visible_array > 0, axis=2)
+        visible_fallback = (~valid_pixels) & visible_valid
+        output[:, visible_fallback] = np.transpose(
+            visible_array[visible_fallback],
+            (1, 0),
+        )
+        output[:, ~(valid_pixels | visible_valid)] = 0
         output = np.rint(np.clip(output, 0, 255)).astype(np.uint8)
         output_png.parent.mkdir(parents=True, exist_ok=True)
         Image.fromarray(np.transpose(output, (1, 2, 0)), mode="RGB").save(output_png)
