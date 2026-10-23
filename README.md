@@ -8,8 +8,8 @@ Interpretation**
 This project develops a remote-sensing pipeline for processing Landsat 8/9
 imagery. It prepares visible RGB imagery and thermal imagery, enhances the
 thermal image with a low-memory ESRGAN model, aligns the enhanced thermal
-image to the RGB grid, prepares paired patches, and trains a Pix2Pix
-thermal-to-RGB colorization model with a U-Net generator and
+image to the RGB grid, prepares four-channel fusion patches, and trains a
+Pix2Pix fusion model with a U-Net generator and
 PatchGAN discriminator.
 
 ## Project objective
@@ -55,8 +55,10 @@ Landsat 8/9 scene
                   Enhanced_Thermal_Pix2Pix.tif
                               |
                               v
-             Pix2Pix colorization and evaluation
-                         (planned)
+             Pix2Pix colorization
+                         |
+                         v
+              Evaluation (planned)
 ```
 
 ## Current progress
@@ -72,7 +74,7 @@ Landsat 8/9 scene
 | Thermal alignment to RGB grid | Complete |
 | Pix2Pix dataset preparation | Complete |
 | Combined Pix2Pix dataset and shared training | Complete |
-| Colorized RGB generation | Planned |
+| Four-channel Pix2Pix fusion and RGB generation | Complete |
 | Evaluation | Planned |
 | Final GUI | Planned |
 
@@ -98,6 +100,7 @@ thermal input for Pix2Pix.
 | `pix2pix_model.py` | Defines the thermal-to-RGB U-Net generator, PatchGAN discriminator, paired dataloader, and resumable training loop. |
 | `prepare_combined_pix2pix_dataset.py` | Builds one scene-level-split Pix2Pix dataset from at least 10 prepared scenes. |
 | `train_pix2pix.py` | Trains Pix2Pix once from the shared combined dataset. |
+| `run_pix2pix_inference.py` | Loads the shared Pix2Pix checkpoint and generates colorized RGB PNG and GeoTIFF outputs for a scene. |
 
 ## Dataset layout
 
@@ -448,26 +451,31 @@ Target: RGB_Image.png
 Do not use the removed `Enhanced_Thermal_Clean.tif` output. It is no longer
 part of the project.
 
-## Pix2Pix dataset and model
+## Pix2Pix fusion dataset and model
 
-The planned Pix2Pix dataset will contain paired thermal and RGB patches:
+The shared Pix2Pix dataset contains four-channel fusion inputs and RGB
+targets. Each input combines the visible RGB bands (B2, B3, B4) with the
+aligned enhanced thermal band:
 
 ```text
-Pix2Pix_Dataset\
+Pix2Pix_Combined_Dataset\
 ├── train\
-│   ├── thermal\
+│   ├── input_rgb\
+│   ├── input_thermal\
 │   └── rgb\
 ├── validation\
-│   ├── thermal\
+│   ├── input_rgb\
+│   ├── input_thermal\
 │   └── rgb\
 └── test\
-    ├── thermal\
+    ├── input_rgb\
+    ├── input_thermal\
     └── rgb\
 ```
 
 The model is:
 
-- One-channel enhanced thermal input.
+- Four-channel input: visible B2/B3/B4 RGB channels plus enhanced thermal.
 - Three-channel RGB target.
 - U-Net generator.
 - PatchGAN discriminator.
@@ -504,10 +512,71 @@ complete aligned thermal and RGB outputs. It writes
 `Pix2Pix_Combined_Dataset` with scene-level train, validation, and test
 splits. This prevents patches from one scene leaking across splits.
 
-Then run `train_pix2pix.py` once. The shared checkpoint is saved under
-`Pix2Pix_Combined_Dataset\checkpoints` and can later be reused for inference
-on new scenes. To resume from a checkpoint, set
+Then run `train_pix2pix.py` once. The default shared dataset and checkpoint
+location is `D:\datasets\Pix2Pix_Combined_Dataset\checkpoints`, and it can
+later be reused for inference on new scenes. Set `PIX2PIX_DATASET_ROOT` to
+use a different location. To resume from a checkpoint, set
 `PIX2PIX_RESUME_CHECKPOINT` before rerunning the training command.
+
+The previous one-channel thermal-only checkpoint cannot be loaded by this
+four-channel model. Regenerate the combined dataset and retrain Pix2Pix once
+after this architecture change.
+
+### Adding new scenes
+
+An existing four-channel checkpoint can be used directly to process a new
+scene. Adding a scene folder does not by itself require Pix2Pix retraining.
+Run the normal per-scene pipeline, align the enhanced thermal image, and then
+run `run_pix2pix_inference.py`.
+
+Rebuild the combined Pix2Pix dataset and retrain when the new scenes should
+contribute to model learning. Retraining is especially recommended when the
+scenes add new locations, seasons, cloud conditions, lighting, or land-cover
+types, or when the current model produces poor results on them:
+
+```powershell
+C:\Python314\python.exe .\prepare_combined_pix2pix_dataset.py
+C:\Python314\python.exe .\train_pix2pix.py
+```
+
+The dataset builder recreates `Pix2Pix_Combined_Dataset` and assigns complete
+scenes to the train, validation, and test splits. Therefore, retraining from
+the beginning is the safest choice after rebuilding the dataset. Do not
+delete the existing checkpoint until the new training run has been validated.
+
+## Pix2Pix inference
+
+After the shared model has been trained, run:
+
+```powershell
+C:\Python314\python.exe .\run_pix2pix_inference.py
+```
+
+Select a prepared scene. The script loads the four-channel `pix2pix_best.pt`
+and uses both:
+
+```text
+Output\Enhanced_Thermal\Enhanced_Thermal_Pix2Pix.tif
+Output\RGB_Image.png
+```
+
+It writes:
+
+```text
+Output\Pix2Pix_Colorized_RGB.png
+Output\Pix2Pix_Colorized_RGB.tif
+```
+
+Inference is tiled with 256-pixel tiles and 64-pixel overlap so large scenes
+do not need to fit into GPU memory at once. Neighboring tiles are combined
+with raised-cosine feathering to reduce visible tile-grid seams. The output
+also preserves 70% of the visible RGB input during inference so clouds,
+boundaries, and other high-frequency visible details are not lost through the
+U-Net bottleneck. NoData/background pixels remain black. The GeoTIFF preserves the aligned
+thermal raster's dimensions, CRS, and affine transform. The checkpoint is
+searched in `D:\datasets\Pix2Pix_Combined_Dataset\checkpoints` first, then
+the project-local combined dataset, or can be set explicitly with
+`PIX2PIX_CHECKPOINT_PATH`.
 
 ## Planned evaluation
 
@@ -566,7 +635,6 @@ CPU execution is possible but substantially slower for large scenes.
 
 ## Known limitations
 
-- Colorized RGB generation is not implemented yet.
 - Quantitative evaluation is not implemented yet.
 - RGB PNG output does not retain GeoTIFF CRS metadata by itself.
 - ESRGAN output must be aligned with `align_enhanced_thermal.py` before
@@ -582,6 +650,5 @@ CPU execution is possible but substantially slower for large scenes.
    `Enhanced_Thermal_Pix2Pix.tif` and `RGB_Image.png`.
 2. Visually validate patch alignment.
 3. Train the Pix2Pix model with `train_pix2pix.py`.
-4. Add colorized RGB inference.
-5. Add PSNR, SSIM, LPIPS, and FID evaluation.
-6. Add a final GUI after the command-line stages are stable.
+4. Evaluate the colorized RGB outputs with PSNR, SSIM, LPIPS, and FID.
+5. Add a final GUI after the command-line stages are stable.

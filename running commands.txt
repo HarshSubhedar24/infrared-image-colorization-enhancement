@@ -71,8 +71,17 @@ between train, validation, and test, and writes:
 
 Pix2Pix_Combined_Dataset\
     train\
+        input_rgb\
+        input_thermal\
+        rgb\
     validation\
+        input_rgb\
+        input_thermal\
+        rgb\
     test\
+        input_rgb\
+        input_thermal\
+        rgb\
     dataset_manifest.json
 
 TRAIN THE SHARED PIX2PIX MODEL
@@ -83,9 +92,42 @@ C:\Python314\python.exe .\train_pix2pix.py
 
 The shared checkpoints are saved to:
 
-Pix2Pix_Combined_Dataset\checkpoints\pix2pix_best.pt
-Pix2Pix_Combined_Dataset\checkpoints\pix2pix_latest.pt
-Pix2Pix_Combined_Dataset\checkpoints\training_history.json
+D:\datasets\Pix2Pix_Combined_Dataset\checkpoints\pix2pix_best.pt
+D:\datasets\Pix2Pix_Combined_Dataset\checkpoints\pix2pix_latest.pt
+D:\datasets\Pix2Pix_Combined_Dataset\checkpoints\training_history.json
+
+The scripts search for the shared dataset in this order:
+
+1. PIX2PIX_DATASET_ROOT, when configured
+2. D:\datasets\Pix2Pix_Combined_Dataset
+3. Pix2Pix_Combined_Dataset inside the project directory
+
+To use another location:
+
+$env:PIX2PIX_DATASET_ROOT = "D:\path\to\Pix2Pix_Combined_Dataset"
+
+The Pix2Pix input has four channels: visible B2/B3/B4 RGB values plus the
+aligned enhanced thermal band. After changing from the previous thermal-only
+model, regenerate the combined dataset and retrain Pix2Pix once.
+
+ADDING NEW SCENES TO PIX2PIX TRAINING
+
+An existing Pix2Pix checkpoint can process a new scene without retraining.
+Run the normal new-scene pipeline, align the enhanced thermal image, and run:
+
+C:\Python314\python.exe .\run_pix2pix_inference.py
+
+If the new scene should contribute to model learning, rebuild the combined
+dataset and retrain:
+
+C:\Python314\python.exe .\prepare_combined_pix2pix_dataset.py
+C:\Python314\python.exe .\train_pix2pix.py
+
+The dataset builder recreates the combined dataset and may change the
+scene-level train/validation/test split. Train from the beginning after this
+rebuild rather than resuming an old checkpoint. Retraining is recommended for
+new locations, seasons, cloud conditions, lighting, land-cover types, or poor
+results on the new scenes.
 
 PROCESSING COMMANDS
 
@@ -105,6 +147,24 @@ C:\Python314\python.exe .\align_enhanced_thermal.py
 
 5) Prepare the Pix2Pix dataset
 C:\Python314\python.exe .\pix2pix_dataset_preparation.py
+
+6) Generate colorized RGB output with the shared Pix2Pix model
+C:\Python314\python.exe .\run_pix2pix_inference.py
+
+This uses:
+
+Output\Enhanced_Thermal\Enhanced_Thermal_Pix2Pix.tif
+
+and saves:
+
+Output\Pix2Pix_Colorized_RGB.png
+Output\Pix2Pix_Colorized_RGB.tif
+
+Inference uses 256-pixel tiles with 64-pixel overlap and feathered
+raised-cosine blending to reduce visible tile-grid seams. It preserves 70%
+of the visible RGB input so clouds and fine visible details remain present.
+NoData/background pixels from the aligned thermal raster remain black in the
+output.
 
 The per-scene processing scripts ask you to select a scene when started.
 The combined Pix2Pix dataset script asks you to select the parent folder

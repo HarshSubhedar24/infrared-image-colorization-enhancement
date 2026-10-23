@@ -139,7 +139,7 @@ def create_pix2pix_dataloader(
     shuffle: bool | None = None,
     num_workers: int = 0,
 ) -> Any:
-    """Load paired thermal and RGB patches as tensors in the [-1, 1] range."""
+    """Load visible RGB plus thermal inputs and RGB targets in [-1, 1]."""
     torch, _ = _load_torch()
     if split not in ("train", "validation", "test"):
         raise ValueError("split must be train, validation, or test.")
@@ -148,15 +148,20 @@ def create_pix2pix_dataloader(
 
     class PairedPatchDataset(torch.utils.data.Dataset):
         def __init__(self) -> None:
-            self.thermal_files = sorted((dataset_root / split / "thermal").glob("*.png"))
+            self.thermal_files = sorted(
+                (dataset_root / split / "input_thermal").glob("*.png")
+            )
+            self.visible_directory = dataset_root / split / "input_rgb"
             self.rgb_directory = dataset_root / split / "rgb"
             if not self.thermal_files:
                 raise FileNotFoundError(
-                    f"No thermal patches found in {dataset_root / split / 'thermal'}"
+                    f"No thermal patches found in "
+                    f"{dataset_root / split / 'input_thermal'}"
                 )
             missing = [
                 path.name for path in self.thermal_files
-                if not (self.rgb_directory / path.name).is_file()
+                if not (self.visible_directory / path.name).is_file()
+                or not (self.rgb_directory / path.name).is_file()
             ]
             if missing:
                 raise FileNotFoundError(f"Missing RGB patch, including: {missing[0]}")
@@ -166,15 +171,20 @@ def create_pix2pix_dataloader(
 
         def __getitem__(self, index: int) -> tuple[Any, Any]:
             thermal_path = self.thermal_files[index]
+            visible_path = self.visible_directory / thermal_path.name
             rgb_path = self.rgb_directory / thermal_path.name
             thermal_image = cv2.imread(str(thermal_path), cv2.IMREAD_GRAYSCALE)
+            visible_image = cv2.imread(str(visible_path), cv2.IMREAD_COLOR)
             rgb_image = cv2.imread(str(rgb_path), cv2.IMREAD_COLOR)
-            if thermal_image is None or rgb_image is None:
+            if thermal_image is None or visible_image is None or rgb_image is None:
                 raise OSError(f"Unable to read paired patch: {thermal_path.name}")
+            visible_image = cv2.cvtColor(visible_image, cv2.COLOR_BGR2RGB)
             rgb_image = cv2.cvtColor(rgb_image, cv2.COLOR_BGR2RGB)
             thermal_tensor = torch.from_numpy(thermal_image.copy()).float().unsqueeze(0)
+            visible_tensor = torch.from_numpy(visible_image.copy()).float().permute(2, 0, 1)
             rgb_tensor = torch.from_numpy(rgb_image.copy()).float().permute(2, 0, 1)
-            return thermal_tensor / 127.5 - 1.0, rgb_tensor / 127.5 - 1.0
+            fusion_tensor = torch.cat((visible_tensor, thermal_tensor), dim=0)
+            return fusion_tensor / 127.5 - 1.0, rgb_tensor / 127.5 - 1.0
 
     if shuffle is None:
         shuffle = split == "train"
@@ -214,7 +224,11 @@ def train_pix2pix(
 
     selected_device = _select_device(torch, device)
     use_mixed_precision = mixed_precision and selected_device.type == "cuda"
-    generator, discriminator = create_pix2pix_models(base_channels=base_channels)
+    generator, discriminator = create_pix2pix_models(
+        input_channels=4,
+        output_channels=3,
+        base_channels=base_channels,
+    )
     generator.to(selected_device)
     discriminator.to(selected_device)
     generator_optimizer = torch.optim.Adam(
@@ -227,6 +241,12 @@ def train_pix2pix(
     best_validation = float("inf")
     if resume_checkpoint is not None:
         checkpoint = torch.load(resume_checkpoint, map_location=selected_device)
+        checkpoint_configuration = checkpoint.get("configuration", {})
+        if int(checkpoint_configuration.get("input_channels", 1)) != 4:
+            raise ValueError(
+                "The resume checkpoint is for the previous one-channel Pix2Pix "
+                "model. Start four-channel fusion training without resuming it."
+            )
         generator.load_state_dict(checkpoint["generator"])
         discriminator.load_state_dict(checkpoint["discriminator"])
         generator_optimizer.load_state_dict(checkpoint["generator_optimizer"])
@@ -304,7 +324,7 @@ def train_pix2pix(
             "discriminator_optimizer": discriminator_optimizer.state_dict(),
             "best_validation": min(best_validation, validation_loss),
             "configuration": {
-                "input_channels": 1,
+                "input_channels": 4,
                 "output_channels": 3,
                 "base_channels": base_channels,
                 "lambda_l1": lambda_l1,

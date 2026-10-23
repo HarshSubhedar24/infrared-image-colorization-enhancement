@@ -1,19 +1,37 @@
-"""Train the Pix2Pix thermal-to-RGB translation model for one scene."""
+"""Train the shared four-channel Pix2Pix fusion model."""
 
 import os
 from pathlib import Path
 
 from pix2pix_model import train_pix2pix
-DATASET_ROOT = Path(__file__).resolve().parent / "Pix2Pix_Combined_Dataset"
-CHECKPOINT_ROOT = Path(__file__).resolve().parent / "Pix2Pix_Combined_Dataset" / "checkpoints"
+
+
+PROJECT_DATASET_ROOT = Path(__file__).resolve().parent / "Pix2Pix_Combined_Dataset"
+DEFAULT_DATASET_ROOT = Path(r"D:\datasets\Pix2Pix_Combined_Dataset")
+
+
+def find_pix2pix_dataset() -> Path:
+    """Find the shared dataset using an override, data-drive, or local path."""
+    configured_path = os.environ.get("PIX2PIX_DATASET_ROOT")
+    candidates = (
+        [Path(configured_path).expanduser()]
+        if configured_path
+        else [DEFAULT_DATASET_ROOT, PROJECT_DATASET_ROOT]
+    )
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate
+    searched = "\n".join(str(candidate) for candidate in candidates)
+    raise FileNotFoundError(
+        "Combined Pix2Pix dataset was not found. Searched:\n"
+        f"{searched}\n"
+        "Set PIX2PIX_DATASET_ROOT to the dataset folder."
+    )
 
 
 def main() -> None:
-    if not DATASET_ROOT.is_dir():
-        raise FileNotFoundError(
-            f"Combined Pix2Pix dataset was not found: {DATASET_ROOT}\n"
-            "Run prepare_combined_pix2pix_dataset.py first."
-        )
+    dataset_root = find_pix2pix_dataset()
+    checkpoint_root = dataset_root / "checkpoints"
     resume_value = os.environ.get("PIX2PIX_RESUME_CHECKPOINT")
     resume_checkpoint = Path(resume_value).expanduser() if resume_value else None
     if resume_checkpoint is not None and not resume_checkpoint.is_file():
@@ -21,8 +39,8 @@ def main() -> None:
             f"Pix2Pix resume checkpoint was not found: {resume_checkpoint}"
         )
     checkpoint_path = train_pix2pix(
-        dataset_root=DATASET_ROOT,
-        checkpoint_directory=CHECKPOINT_ROOT,
+        dataset_root=dataset_root,
+        checkpoint_directory=checkpoint_root,
         epochs=50,
         batch_size=1,
         learning_rate=2e-4,

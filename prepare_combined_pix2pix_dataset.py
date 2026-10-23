@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import random
 import shutil
 from pathlib import Path
@@ -22,6 +23,18 @@ TRAIN_SCENE_RATIO = 0.80
 VALIDATION_SCENE_RATIO = 0.10
 RANDOM_SEED = 42
 PREVIEW_COUNT = 5
+PROJECT_DATASET_ROOT = Path(__file__).resolve().parent / "Pix2Pix_Combined_Dataset"
+DEFAULT_DATASET_ROOT = Path(r"D:\datasets\Pix2Pix_Combined_Dataset")
+
+
+def default_output_root() -> Path:
+    """Resolve the shared dataset output location."""
+    configured_path = os.environ.get("PIX2PIX_DATASET_ROOT")
+    if configured_path:
+        return Path(configured_path).expanduser()
+    if DEFAULT_DATASET_ROOT.parent.is_dir():
+        return DEFAULT_DATASET_ROOT
+    return PROJECT_DATASET_ROOT
 
 
 def prepare_combined_pix2pix_dataset(
@@ -88,6 +101,13 @@ def prepare_combined_pix2pix_dataset(
         "scene_counts": {name: len(items) for name, items in scene_splits.items()},
         "scenes": {},
         "counts": {},
+        "input_channels": [
+            "visible_B2_blue",
+            "visible_B3_green",
+            "visible_B4_red",
+            "enhanced_thermal",
+        ],
+        "target": "RGB_Image",
     }
 
     for split_name, split_records in scene_splits.items():
@@ -107,12 +127,17 @@ def prepare_combined_pix2pix_dataset(
                         f"{record['name']}_patch_{patch_number:07d}_"
                         f"x{left}_y{top}.png"
                     )
-                    thermal_directory = output_root / split_name / "thermal"
+                    thermal_directory = output_root / split_name / "input_thermal"
+                    visible_directory = output_root / split_name / "input_rgb"
                     rgb_directory = output_root / split_name / "rgb"
                     thermal_directory.mkdir(parents=True, exist_ok=True)
+                    visible_directory.mkdir(parents=True, exist_ok=True)
                     rgb_directory.mkdir(parents=True, exist_ok=True)
                     Image.fromarray(thermal_patch.astype(np.uint8), mode="L").save(
                         thermal_directory / patch_name
+                    )
+                    Image.fromarray(rgb_patch.astype(np.uint8), mode="RGB").save(
+                        visible_directory / patch_name
                     )
                     Image.fromarray(rgb_patch.astype(np.uint8), mode="RGB").save(
                         rgb_directory / patch_name
@@ -194,7 +219,8 @@ def _split_scenes(records: list[dict]) -> dict[str, list[dict]]:
 
 
 def _write_preview(output_root: Path, split_name: str) -> None:
-    thermal_directory = output_root / split_name / "thermal"
+    thermal_directory = output_root / split_name / "input_thermal"
+    visible_directory = output_root / split_name / "input_rgb"
     rgb_directory = output_root / split_name / "rgb"
     thermal_files = sorted(thermal_directory.glob("*.png"))[:PREVIEW_COUNT]
     if not thermal_files:
@@ -203,6 +229,7 @@ def _write_preview(output_root: Path, split_name: str) -> None:
     draw = ImageDraw.Draw(canvas)
     for index, thermal_file in enumerate(thermal_files):
         rgb_file = rgb_directory / thermal_file.name
+        visible_file = visible_directory / thermal_file.name
         with Image.open(thermal_file) as thermal_image, Image.open(rgb_file) as rgb_image:
             canvas.paste(thermal_image.convert("RGB"), (0, index * PATCH_SIZE))
             canvas.paste(rgb_image.convert("RGB"), (PATCH_SIZE, index * PATCH_SIZE))
@@ -213,7 +240,7 @@ def _write_preview(output_root: Path, split_name: str) -> None:
 
 def main() -> None:
     scenes_root = select_scene_root_directory()
-    output_root = Path(__file__).resolve().parent / "Pix2Pix_Combined_Dataset"
+    output_root = default_output_root()
     prepare_combined_pix2pix_dataset(scenes_root, output_root)
 
 
