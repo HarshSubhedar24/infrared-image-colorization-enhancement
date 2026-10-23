@@ -8,7 +8,7 @@ from typing import Any
 
 import numpy as np
 import rasterio
-from PIL import Image
+from PIL import Image, ImageDraw, ImageOps
 from rasterio.windows import Window
 
 from pix2pix_model import create_pix2pix_models
@@ -21,6 +21,8 @@ TILE_SIZE = 256
 OVERLAP = 64
 BLEND_FLOOR = 0.05
 VISIBLE_PRESERVATION = 0.70
+PREVIEW_WIDTH = 1400
+PREVIEW_HEIGHT = 800
 
 
 def find_pix2pix_checkpoint() -> Path:
@@ -258,6 +260,134 @@ def _write_geotiff(path: Path, source: rasterio.DatasetReader, output: np.ndarra
         destination.write(output)
 
 
+def show_pix2pix_preview(
+    thermal_path: Path,
+    image_path: Path,
+    saved_preview_path: Path,
+) -> None:
+    """Display the thermal input beside the generated Pix2Pix RGB image."""
+    if not thermal_path.is_file():
+        raise FileNotFoundError(f"Thermal preview image not found: {thermal_path}")
+    if not image_path.is_file():
+        raise FileNotFoundError(f"Pix2Pix preview image not found: {image_path}")
+
+    import tkinter as tk
+
+    from PIL import ImageTk
+
+    with rasterio.open(thermal_path) as thermal_source:
+        if thermal_source.count != 1:
+            raise ValueError("The thermal preview raster must contain one band.")
+        thermal_array = thermal_source.read(1)
+    thermal_array = np.nan_to_num(thermal_array, nan=0.0)
+    thermal_min = float(thermal_array.min())
+    thermal_max = float(thermal_array.max())
+    if thermal_max > thermal_min:
+        thermal_array = (
+            (thermal_array - thermal_min)
+            / (thermal_max - thermal_min)
+            * 255.0
+        )
+    thermal_image = Image.fromarray(
+        np.clip(thermal_array, 0, 255).astype(np.uint8),
+        mode="L",
+    ).convert("RGB")
+
+    with Image.open(image_path) as image:
+        colorized_image = image.convert("RGB")
+        preview_canvas = _create_preview_canvas(thermal_image, colorized_image)
+        saved_preview_path.parent.mkdir(parents=True, exist_ok=True)
+        preview_canvas.save(saved_preview_path)
+        screen = tk.Tk()
+        screen.title("Thermal Input and Pix2Pix Colorized RGB Preview")
+        screen.configure(background="white")
+        screen.geometry(f"{PREVIEW_WIDTH}x{PREVIEW_HEIGHT}")
+        screen.resizable(False, False)
+        screen.columnconfigure(0, weight=1)
+        screen.columnconfigure(1, weight=1)
+        screen.rowconfigure(0, weight=1)
+        panels = (
+            ("Thermal Image (Training Input)", thermal_image),
+            ("Pix2Pix Colorized RGB", colorized_image),
+        )
+        image_references: list[ImageTk.PhotoImage] = []
+        labels: list[tk.Label] = []
+        for column, (title, _) in enumerate(panels):
+            panel = tk.Frame(screen, background="white")
+            panel.grid(row=0, column=column, sticky="nsew", padx=8, pady=8)
+            panel.columnconfigure(0, weight=1)
+            panel.rowconfigure(1, weight=1)
+            title_label = tk.Label(
+                panel,
+                text=title,
+                foreground="black",
+                background="white",
+                font=("Segoe UI", 12, "bold"),
+            )
+            title_label.grid(row=0, column=0, pady=(0, 6))
+            image_label = tk.Label(panel, background="black")
+            image_label.grid(row=1, column=0, sticky="nsew")
+            labels.append(image_label)
+
+        def resize_preview(_event: object = None) -> None:
+            image_references.clear()
+            for label, (_, preview_image) in zip(labels, panels):
+                available_width = max(label.winfo_width(), 1)
+                available_height = max(label.winfo_height(), 1)
+                resized = preview_image.copy()
+                resized.thumbnail(
+                    (available_width, available_height),
+                    Image.Resampling.LANCZOS,
+                )
+                image_reference = ImageTk.PhotoImage(resized)
+                image_references.append(image_reference)
+                label.configure(image=image_reference)
+
+        screen.bind("<Configure>", resize_preview)
+        screen.protocol("WM_DELETE_WINDOW", screen.destroy)
+        screen.after_idle(resize_preview)
+        screen.mainloop()
+
+
+def _create_preview_canvas(thermal_image: Image.Image, colorized_image: Image.Image) -> Image.Image:
+    """Create the fixed-size image saved alongside the interactive preview."""
+    canvas = Image.new("RGB", (PREVIEW_WIDTH, PREVIEW_HEIGHT), "white")
+    draw = ImageDraw.Draw(canvas)
+    panel_width = PREVIEW_WIDTH // 2
+    panel_padding = 8
+    title_height = 32
+    image_box_width = panel_width - (panel_padding * 2)
+    image_box_height = PREVIEW_HEIGHT - title_height - (panel_padding * 2)
+    for index, (title, image) in enumerate(
+        (
+            ("Thermal Image (Training Input)", thermal_image),
+            ("Pix2Pix Colorized RGB", colorized_image),
+        )
+    ):
+        left = index * panel_width + panel_padding
+        top = panel_padding
+        draw.text((left, top), title, fill="black")
+        image_box = Image.new(
+            "RGB",
+            (image_box_width, image_box_height),
+            "black",
+        )
+        resized = ImageOps.contain(
+            image,
+            (image_box_width, image_box_height),
+            method=Image.Resampling.LANCZOS,
+        )
+        image_box.paste(
+            resized,
+            (
+                (image_box_width - resized.width) // 2,
+                (image_box_height - resized.height) // 2,
+            ),
+        )
+        canvas.paste(image_box, (left, top + title_height))
+    return canvas
+
+
 def main() -> None:
     configured_scene = os.environ.get("INFRARED_SCENE_DIRECTORY")
     scene_directory = (
@@ -278,6 +408,7 @@ def main() -> None:
     visible_rgb_path = output_directory / "RGB_Image.png"
     output_png = output_directory / "Pix2Pix_Colorized_RGB.png"
     output_tif = output_directory / "Pix2Pix_Colorized_RGB.tif"
+    saved_preview_path = output_directory / "Pix2Pix_Preview.png"
     checkpoint_path = find_pix2pix_checkpoint()
     print(f"Using shared Pix2Pix checkpoint: {checkpoint_path}")
     run_pix2pix_inference(
@@ -289,6 +420,8 @@ def main() -> None:
         visible_preservation=VISIBLE_PRESERVATION,
         device="cuda",
     )
+    show_pix2pix_preview(thermal_path, output_png, saved_preview_path)
+    print(f"Pix2Pix preview saved: {saved_preview_path}")
 
 
 if __name__ == "__main__":

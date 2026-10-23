@@ -157,6 +157,13 @@ and saves:
 Output\Pix2Pix_Colorized_RGB.png
 Output\Pix2Pix_Colorized_RGB.tif
 
+After inference, a preview window displays the aligned thermal input on the
+left and Output\Pix2Pix_Colorized_RGB.png on the right. Close the window to
+finish the pipeline. The window background is white; the image areas remain
+black so the raster's black NoData border is visible. The preview window is
+fixed at 1400 x 800 pixels and cannot be resized. The same preview is saved
+as Output\Pix2Pix_Preview.png.
+
 Inference uses 256-pixel tiles with 64-pixel overlap and feathered
 raised-cosine blending to reduce visible tile-grid seams. It preserves 70%
 of the visible RGB input so clouds and fine visible details remain present.
